@@ -76,7 +76,41 @@ async function usaspendingPost(endpoint: string, body: object) {
   return res.json();
 }
 
+const OBLIG_CACHE = new Map<number, Map<string, number>>();
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+const cacheKey = (fy: number) => `usaspending_oblig_${fy}`;
+
+function loadCachedObligations(fy: number): Map<string, number> | null {
+  const mem = OBLIG_CACHE.get(fy);
+  if (mem) return mem;
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(cacheKey(fy));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { ts: number; data: [string, number][] };
+    if (!parsed || Date.now() - parsed.ts > CACHE_TTL_MS) return null;
+    const map = new Map<string, number>(parsed.data);
+    OBLIG_CACHE.set(fy, map);
+    return map;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedObligations(fy: number, map: Map<string, number>) {
+  OBLIG_CACHE.set(fy, map);
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(cacheKey(fy), JSON.stringify({ ts: Date.now(), data: Array.from(map.entries()) }));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 async function getStateObligations(fy: number): Promise<Map<string, number>> {
+  const cached = loadCachedObligations(fy);
+  if (cached) return cached;
+
   const body = {
     scope: 'place_of_performance',
     geo_layer: 'state',
@@ -96,6 +130,7 @@ async function getStateObligations(fy: number): Promise<Map<string, number>> {
     const amt = Number(r.aggregated_amount ?? 0);
     map.set(st, amt);
   }
+  saveCachedObligations(fy, map);
   return map;
 }
 
@@ -145,10 +180,14 @@ export default function DeltaBidenPage() {
   const [status, setStatus] = useState('Loading USAspending data…');
   const [loading, setLoading] = useState(true);
   const [displayedWords, setDisplayedWords] = useState(0);
+  const [viewMode, setViewMode] = useState<'desc' | 'key'>('desc');
 
   const chartDescription =
     'This chart shows the change in federal obligations per capita between the Biden era (mean FY2021–FY2024) and the pre-Biden baseline (mean FY2017–FY2020). In this timeframe, all states show positive changes, with a few states driving the largest gains. Colors reflect the 2020 presidential winner in each state.';
-  const words = chartDescription.split(' ');
+  const keyObservations =
+    'Key observations: The distribution is broadly positive across states, with a handful of states driving the largest per-capita gains. The mix of red and blue states at the top reinforces that the increase is not strictly partisan.';
+  const textToShow = viewMode === 'desc' ? chartDescription : keyObservations;
+  const words = textToShow.split(' ');
 
   useEffect(() => {
     async function main() {
@@ -298,7 +337,9 @@ export default function DeltaBidenPage() {
     if (loading || !chartRef.current) return;
 
     const estimatedChartAnimEnd = ANIM.barDurationMs + 51 * ANIM.perBarStaggerMs + ANIM.labelLagMs + 300;
+    const delay = viewMode === 'desc' ? estimatedChartAnimEnd : 0;
 
+    setDisplayedWords(0);
     const animationTimeout = setTimeout(() => {
       let wordIndex = 0;
       const wordInterval = setInterval(() => {
@@ -310,10 +351,10 @@ export default function DeltaBidenPage() {
       }, 80);
 
       return () => clearInterval(wordInterval);
-    }, estimatedChartAnimEnd);
+    }, delay);
 
     return () => clearTimeout(animationTimeout);
-  }, [loading, words.length]);
+  }, [loading, words.length, viewMode]);
 
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
@@ -343,6 +384,25 @@ export default function DeltaBidenPage() {
                   <span className="inline-block h-4 w-0.5 ml-1 bg-blue-500 animate-pulse"></span>
                 )}
               </p>
+              <div className="mt-2 text-[11px] text-gray-600">
+                {viewMode === 'desc' ? (
+                  <button
+                    type="button"
+                    className="font-semibold italic underline underline-offset-2"
+                    onClick={() => setViewMode('key')}
+                  >
+                    Key observations...
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="font-semibold italic underline underline-offset-2"
+                    onClick={() => setViewMode('desc')}
+                  >
+                    Description...
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

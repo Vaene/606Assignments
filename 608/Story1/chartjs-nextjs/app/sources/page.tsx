@@ -115,15 +115,11 @@ export default function SourcesPage() {
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="mx-auto max-w-6xl rounded-lg bg-white p-6 pb-16 shadow flex flex-col h-screen">
         <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-gray-900">Data Sources, Downloads, and Processing</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Download local files and trace each source back to its origin. Each item includes a brief summary
-            of how it was processed for this analysis.
-          </p>
+          <h1 className="text-2xl font-semibold text-gray-900">Summary and Sources</h1>
         </div>
 
-        <div className="mt-6 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-700">
-          <div className="font-semibold text-gray-900">Summary Answer</div>
+        <div className="mt-2 text-sm font-semibold text-gray-900">Summary</div>
+        <div className="mt-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-700">
           Spending increases in the Biden era are broad-based across states, but the scatter plots show only
           moderate positive associations with 2024 presidential and House margins. The relationship is real
           but not deterministic: states with similar spending changes often voted differently, and outliers
@@ -131,7 +127,8 @@ export default function SourcesPage() {
           the same direction on average.
         </div>
 
-        <div className="mt-6 flex-1 overflow-auto pr-1">
+        <div className="mt-6 text-sm font-semibold text-gray-900">Sources</div>
+        <div className="mt-3 flex-1 overflow-auto pr-1">
           <div className="grid grid-cols-1 gap-4">
             {sources.map((s) => (
               <div key={s.title} className="rounded-lg border border-gray-100 bg-gray-50 p-4">

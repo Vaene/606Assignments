@@ -29,7 +29,7 @@ const ANIM = {
   perPointDelayMs: 6
 };
 
-type ChartWithAnim = ChartJS & { $_animStart?: number; $_completedFlatIndex?: number };
+type ChartWithAnim = ChartJS & { $_animStart?: number; $_completedFlatIndex?: number; $_trendFinalized?: boolean };
 
 const zeroLines = {
   id: 'zeroLines',
@@ -145,7 +145,41 @@ async function usaspendingPost(endpoint: string, body: object) {
   return res.json();
 }
 
+const OBLIG_CACHE = new Map<number, Map<string, number>>();
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+const cacheKey = (fy: number) => `usaspending_oblig_${fy}`;
+
+function loadCachedObligations(fy: number): Map<string, number> | null {
+  const mem = OBLIG_CACHE.get(fy);
+  if (mem) return mem;
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(cacheKey(fy));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { ts: number; data: [string, number][] };
+    if (!parsed || Date.now() - parsed.ts > CACHE_TTL_MS) return null;
+    const map = new Map<string, number>(parsed.data);
+    OBLIG_CACHE.set(fy, map);
+    return map;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedObligations(fy: number, map: Map<string, number>) {
+  OBLIG_CACHE.set(fy, map);
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(cacheKey(fy), JSON.stringify({ ts: Date.now(), data: Array.from(map.entries()) }));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 async function getStateObligations(fy: number): Promise<Map<string, number>> {
+  const cached = loadCachedObligations(fy);
+  if (cached) return cached;
+
   const body = {
     scope: 'place_of_performance',
     geo_layer: 'state',
@@ -165,6 +199,7 @@ async function getStateObligations(fy: number): Promise<Map<string, number>> {
     const amt = Number(r.aggregated_amount ?? 0);
     map.set(st, amt);
   }
+  saveCachedObligations(fy, map);
   return map;
 }
 
@@ -260,6 +295,8 @@ export default function ScatterHousePage() {
   const chartRef = useRef<ChartJS | null>(null);
   const [status, setStatus] = useState('Loading data…');
   const [stats, setStats] = useState<{ r2: number; p: number; relevant: boolean } | null>(null);
+  const [displayedWords, setDisplayedWords] = useState(0);
+  const [viewMode, setViewMode] = useState<'desc' | 'key'>('desc');
 
   useEffect(() => {
     async function main() {
@@ -402,15 +439,17 @@ export default function ScatterHousePage() {
               return ctx.dataIndex * ANIM.perPointDelayMs;
             },
             onComplete: () => {
-              const chart = chartRef.current;
+              const chart = chartRef.current as ChartWithAnim | null;
               if (!chart) return;
+              if (chart.$_trendFinalized) return;
+              chart.$_trendFinalized = true;
               const trend = chart.data.datasets.find((d) => d.label === 'Trend') as
                 | ChartDataset<'line', ScatterPoint[]>
                 | undefined;
               if (!trend) return;
               trend.borderDash = relevant ? [] : [4, 4];
               trend.borderDashOffset = 0;
-              chart.update('none');
+              chart.update();
             }
           },
           plugins: {
@@ -464,6 +503,26 @@ export default function ScatterHousePage() {
     };
   }, []);
 
+  const chartDescription =
+    'This scatter plot compares the Biden-era average (FY2021–FY2024) to the pre-Biden baseline (FY2017–FY2020) and relates those changes to statewide 2024 House margins. Points are colored by 2020 presidential winner.';
+  const keyObservations =
+    'Key observations: The association is moderately positive, but dispersion remains. Outliers include HI, VT, WY, MD, and SD, highlighting local dynamics that can outweigh spending changes.';
+  const textToShow = viewMode === 'desc' ? chartDescription : keyObservations;
+  const words = textToShow.split(' ');
+
+  useEffect(() => {
+    setDisplayedWords(0);
+    let wordIndex = 0;
+    const wordInterval = setInterval(() => {
+      wordIndex++;
+      setDisplayedWords(wordIndex);
+      if (wordIndex >= words.length) {
+        clearInterval(wordInterval);
+      }
+    }, 60);
+    return () => clearInterval(wordInterval);
+  }, [words.length, viewMode]);
+
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="mx-auto max-w-6xl rounded-lg bg-white p-5 pb-16 shadow flex flex-col h-screen">
@@ -489,12 +548,32 @@ export default function ScatterHousePage() {
           )}
         </div>
         <div className="mt-3 mb-2 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-700">
-          This scatter plot compares the Biden-era average (FY2021–FY2024) to the pre-Biden baseline
-          (FY2017–FY2020) and relates those changes to statewide 2024 House margins. Points are colored by
-          2020 presidential winner.
-          <div className="mt-2 text-sm text-gray-700">
-            The association is moderately positive, but dispersion remains. Outliers include HI, VT, WY, MD,
-            and SD, highlighting local dynamics that can outweigh spending changes.
+          {words.slice(0, displayedWords).map((word, idx) => (
+            <span key={idx} className="inline animate-fadeIn">
+              {word}{' '}
+            </span>
+          ))}
+          {displayedWords < words.length && (
+            <span className="inline-block h-4 w-0.5 ml-1 bg-blue-500 animate-pulse"></span>
+          )}
+          <div className="mt-2 text-[11px] text-gray-600">
+            {viewMode === 'desc' ? (
+              <button
+                type="button"
+                className="font-semibold italic underline underline-offset-2"
+                onClick={() => setViewMode('key')}
+              >
+                Key observations...
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="font-semibold italic underline underline-offset-2"
+                onClick={() => setViewMode('desc')}
+              >
+                Description...
+              </button>
+            )}
           </div>
           {stats && (
             <div className="mt-2 text-xs text-gray-600">

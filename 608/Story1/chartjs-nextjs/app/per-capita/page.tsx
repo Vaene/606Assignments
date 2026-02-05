@@ -75,7 +75,41 @@ async function usaspendingPost(endpoint: string, body: object) {
   return res.json();
 }
 
+const OBLIG_CACHE = new Map<number, Map<string, number>>();
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+const cacheKey = (fy: number) => `usaspending_oblig_${fy}`;
+
+function loadCachedObligations(fy: number): Map<string, number> | null {
+  const mem = OBLIG_CACHE.get(fy);
+  if (mem) return mem;
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(cacheKey(fy));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { ts: number; data: [string, number][] };
+    if (!parsed || Date.now() - parsed.ts > CACHE_TTL_MS) return null;
+    const map = new Map<string, number>(parsed.data);
+    OBLIG_CACHE.set(fy, map);
+    return map;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedObligations(fy: number, map: Map<string, number>) {
+  OBLIG_CACHE.set(fy, map);
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(cacheKey(fy), JSON.stringify({ ts: Date.now(), data: Array.from(map.entries()) }));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 async function getStateObligations(fy: number): Promise<Map<string, number>> {
+  const cached = loadCachedObligations(fy);
+  if (cached) return cached;
+
   const body = {
     scope: 'place_of_performance',
     geo_layer: 'state',
@@ -95,6 +129,7 @@ async function getStateObligations(fy: number): Promise<Map<string, number>> {
     const amt = Number(r.aggregated_amount ?? 0);
     map.set(st, amt);
   }
+  saveCachedObligations(fy, map);
   return map;
 }
 
@@ -146,9 +181,14 @@ export default function PerCapitaPage() {
   const [status, setStatus] = useState('Loading USAspending data…');
   const [loading, setLoading] = useState(true);
   const [displayedWords, setDisplayedWords] = useState(0);
+  const [viewMode, setViewMode] = useState<'desc' | 'key'>('desc');
 
-  const chartDescription = 'This chart compares federal obligations per capita by state in FY2024 versus the pre-Biden baseline average from FY2017–FY2020. States are ordered by maximum per-capita spending, with each state showing two bars: the lighter bar represents the historical average per person, and the darker bars show FY2024 levels. Colors represent the 2020 presidential election winner in each state, highlighting how per-capita federal spending shifted across political contexts.';
-  const words = chartDescription.split(' ');
+  const chartDescription =
+    'This chart compares federal obligations per capita by state in FY2024 versus the pre-Biden baseline average from FY2017–FY2020. States are ordered by maximum per-capita spending, with each state showing two bars: the lighter bar represents the historical average per person, and the darker bars show FY2024 levels. Colors represent the 2020 presidential election winner in each state, highlighting how per-capita federal spending shifted across political contexts.';
+  const keyObservations =
+    'Key observations: Per-capita framing reveals states that rise or fall after adjusting for population size. It surfaces smaller states with outsized per-person changes, but the measure can exaggerate swings where population is very low.';
+  const textToShow = viewMode === 'desc' ? chartDescription : keyObservations;
+  const words = textToShow.split(' ');
 
   useEffect(() => {
     async function main() {
@@ -311,7 +351,9 @@ export default function PerCapitaPage() {
     if (loading || !chartRef.current) return;
 
     const estimatedChartAnimEnd = ANIM.barDurationMs + 50 * ANIM.perBarStaggerMs + ANIM.labelLagMs + 300;
+    const delay = viewMode === 'desc' ? estimatedChartAnimEnd : 0;
 
+    setDisplayedWords(0);
     const animationTimeout = setTimeout(() => {
       let wordIndex = 0;
       const wordInterval = setInterval(() => {
@@ -323,10 +365,10 @@ export default function PerCapitaPage() {
       }, 80);
 
       return () => clearInterval(wordInterval);
-    }, estimatedChartAnimEnd);
+    }, delay);
 
     return () => clearTimeout(animationTimeout);
-  }, [loading, words.length]);
+  }, [loading, words.length, viewMode]);
 
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
@@ -356,6 +398,25 @@ export default function PerCapitaPage() {
                   <span className="inline-block h-4 w-0.5 ml-1 bg-blue-500 animate-pulse"></span>
                 )}
               </p>
+              <div className="mt-2 text-[11px] text-gray-600">
+                {viewMode === 'desc' ? (
+                  <button
+                    type="button"
+                    className="font-semibold italic underline underline-offset-2"
+                    onClick={() => setViewMode('key')}
+                  >
+                    Key observations...
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="font-semibold italic underline underline-offset-2"
+                    onClick={() => setViewMode('desc')}
+                  >
+                    Description...
+                  </button>
+                )}
+              </div>
             </div>
           )}
           <Link

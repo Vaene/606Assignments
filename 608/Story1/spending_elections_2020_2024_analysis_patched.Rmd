@@ -26,7 +26,7 @@ This analysis examines whether changes in federal spending between FY2020 and FY
 
 1. Varied meaningfully across states  
 2. Were associated with Biden’s 2020 electoral support  
-3. Were associated with 2024 election outcomes for President, Senate, and House  
+3. Were associated with 2024 election outcomes for President, and House  
 
 The analysis is **observational** and evaluates correlation, not causation.
 
@@ -78,7 +78,7 @@ theme_low_ink <- function(base_size = 11) {
     axis.text.y = element_text(size = base_size * 0.6),
     axis.text.x = element_text(size = base_size * 0.7),
     legend.title = element_blank(),
-    legend.position = "top",
+    legend.position = "none",
     plot.title.position = "plot",
     plot.title = element_text(margin = margin(b = 6)),
     plot.subtitle = element_text(margin = margin(b = 8))
@@ -543,6 +543,12 @@ ggplot(bars_total_plot, aes(x = value, y = state_series, fill = winner_2020, alp
   )
 ```
 
+### Key Observations
+
+1. **Why data beyond the IIJA snapshot:** The IIJA spreadsheet is a program‑specific funding snapshot, but the research question requires **total federal obligations** across all programs. The USAspending API provides full‑scope spending needed to compare eras and align with election outcomes.
+
+2. **Comparable time windows:** Using FY2017–FY2020 vs FY2024 creates a stable baseline instead of a single year or a single program, making changes more interpretable.
+
 ## FY2024 Obligations Per Capita by State
 
 ```{r bar-pc-compare, fig.height=10}
@@ -595,6 +601,12 @@ ggplot(bars_pc_plot, aes(x = value, y = state_series, fill = winner_2020, alpha 
     axis.text.y = element_text(size = 7)
   )
 ```
+
+### Key Observations
+
+1. **Why per‑capita is clearer:** Per‑capita spending controls for population size, revealing states that look small in total dollars but large **per resident**.
+
+2. **Per‑capita pitfalls:** Very small population states and DC can show extreme values because the denominator is small. These outliers are real but can **exaggerate swings**, so they should be read alongside totals.
 
 # 2024 Election Results
 
