@@ -2,7 +2,17 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { Chart as ChartJS, BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend, TooltipItem } from 'chart.js';
+import {
+  Chart as ChartJS,
+  BarController,
+  BarElement,
+  CategoryScale,
+  LinearScale,
+  Tooltip,
+  Legend,
+  TooltipItem,
+  ChartConfiguration
+} from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 
 ChartJS.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend, ChartDataLabels);
@@ -99,9 +109,11 @@ function parsePopulationCSV(text: string): Map<string, number> {
   return map;
 }
 
+type ChartWithAnim = ChartJS & { $_animStart?: number; $_completedFlatIndex?: number };
+
 const labelsAfterBars = {
   id: 'labelsAfterBars',
-  beforeDatasetsDraw(chart: any) {
+  beforeDatasetsDraw(chart: ChartWithAnim) {
     const meta0 = chart.getDatasetMeta(0);
     if (!meta0?.data?.length) return;
 
@@ -115,14 +127,14 @@ const labelsAfterBars = {
   }
 };
 
-function labelDisplay(ctx: any) {
+function labelDisplay(ctx: { chart: ChartWithAnim; dataIndex: number; datasetIndex: number }) {
   const chart = ctx.chart;
   const flat = ctx.dataIndex * 2 + ctx.datasetIndex;
   const completed = chart.$_completedFlatIndex ?? -1;
   return flat <= completed;
 }
 
-function animationDelay(ctx: any) {
+function animationDelay(ctx: { type?: string; dataIndex: number; datasetIndex: number }) {
   if (ctx.type !== 'data') return 0;
   const flat = ctx.dataIndex * 2 + ctx.datasetIndex;
   return flat * ANIM.perBarStaggerMs;
@@ -214,7 +226,7 @@ export default function PerCapitaPage() {
         hexToRgba(COLORS[(winnerMap[st] ?? 'Unknown') as keyof typeof COLORS] ?? COLORS.Unknown, 0.7)
       );
 
-      chartRef.current = new ChartJS(canvasRef.current, {
+      const config: ChartConfiguration<'bar', number[], string> = {
         type: 'bar',
         data: {
           labels,
@@ -245,7 +257,7 @@ export default function PerCapitaPage() {
           layout: { padding: { left: 6, right: 12, top: 8, bottom: 6 } },
           animation: {
             duration: ANIM.barDurationMs,
-            easing: 'easeOutQuart' as any,
+            easing: 'easeOutQuart',
             delay: animationDelay
           },
           plugins: {
@@ -258,10 +270,10 @@ export default function PerCapitaPage() {
             },
             datalabels: {
               display: labelDisplay,
-              anchor: 'end' as any,
-              align: 'right' as any,
+              anchor: 'end',
+              align: 'right',
               color: '#111',
-              font: { size: 8, weight: '600' as any },
+              font: { size: 8, weight: 600 },
               formatter: (v: number) => formatDollars(v),
               clamp: true
             }
@@ -280,14 +292,16 @@ export default function PerCapitaPage() {
               offset: true,
               ticks: {
                 color: '#111',
-                font: { size: 8, weight: '700' as any },
+                font: { size: 8, weight: 700 },
                 padding: 4
               }
             }
           }
         },
         plugins: [labelsAfterBars]
-      } as any);
+      };
+
+      chartRef.current = new ChartJS(canvasRef.current, config);
     }
 
     main();
@@ -316,9 +330,9 @@ export default function PerCapitaPage() {
 
   return (
     <main className="min-h-screen bg-gray-50 p-4 md:p-8">
-      <div className="mx-auto max-w-6xl rounded-lg bg-white p-6 shadow flex flex-col h-screen">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
+      <div className="mx-auto max-w-6xl rounded-lg bg-white p-5 pb-16 shadow flex flex-col h-screen">
+        <div className="mb-4">
+          <h1 className="text-xl font-bold text-gray-900">
             Federal Obligations Per Capita by State: FY2024 vs Pre-Biden Baseline
           </h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -328,7 +342,7 @@ export default function PerCapitaPage() {
         <div className="mb-4">
           <div className="text-sm text-gray-600">{status}</div>
         </div>
-        <div className="relative flex-1">
+        <div className="relative flex-1 pb-4">
           <canvas ref={canvasRef} id="barPerCapita" className="w-full h-full"></canvas>
           {!loading && (
             <div className="absolute top-1/3 right-4 md:right-8 w-72 md:w-80 h-auto z-10 bg-white rounded-lg p-4 shadow-md md:shadow-lg">
@@ -346,24 +360,43 @@ export default function PerCapitaPage() {
           )}
           <Link
             href="/"
-            className="group fixed left-4 md:left-8 top-1/2 -translate-y-1/2 z-20 text-gray-500 text-lg transition duration-150 ease-out hover:text-gray-900 hover:scale-125"
+            className="fixed left-4 md:left-8 top-1/2 -translate-y-1/2 z-20 text-gray-400 text-base transition duration-150 ease-out hover:text-gray-900 hover:scale-125"
             aria-label="Go to total obligations chart"
           >
-            <span className="inline-block transition group-hover:scale-125">‹</span>
+            <span className="inline-block">‹</span>
           </Link>
-          <div
-            className="fixed right-4 md:right-8 top-1/2 -translate-y-1/2 z-20 text-gray-400 opacity-25 text-lg select-none"
-            aria-hidden="true"
+          <Link
+            href="/scatter-pres"
+            className="fixed right-4 md:right-8 top-1/2 -translate-y-1/2 z-20 text-gray-400 text-base transition duration-150 ease-out hover:text-gray-900 hover:scale-125"
+            aria-label="Go to presidential margin scatter"
           >
-            ›
-          </div>
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 rounded-full border border-gray-200 bg-white/90 px-4 py-2 text-xs text-gray-600 shadow-md backdrop-blur">
-            <span>1</span>
+            <span className="inline-block">›</span>
+          </Link>
+          <div className="fixed bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 rounded-full border border-gray-200 bg-white/65 px-4 py-1 text-xs text-gray-600 shadow-md backdrop-blur scale-75 origin-bottom">
+            <span className="font-semibold text-gray-900">3 / 7</span>
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-gray-300"></span>
-              <span className="h-2 w-2 rounded-full bg-gray-900"></span>
+              <Link href="/intro" aria-label="Go to page 1">
+                <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
+              </Link>
+              <Link href="/" aria-label="Go to page 2">
+                <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
+              </Link>
+              <Link href="/per-capita" aria-label="Go to page 3">
+                <span className="block h-2 w-2 rounded-full bg-gray-900"></span>
+              </Link>
+              <Link href="/scatter-pres" aria-label="Go to page 4">
+                <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
+              </Link>
+              <Link href="/scatter-house" aria-label="Go to page 5">
+                <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
+              </Link>
+              <Link href="/delta-biden" aria-label="Go to page 6">
+                <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
+              </Link>
+              <Link href="/sources" aria-label="Go to page 7">
+                <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
+              </Link>
             </div>
-            <span className="font-semibold text-gray-900">2</span>
           </div>
         </div>
       </div>

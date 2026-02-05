@@ -30,6 +30,12 @@ This analysis examines whether changes in federal spending between FY2020 and FY
 
 The analysis is **observational** and evaluates correlation, not causation.
 
+# Intro Question
+
+**Did Spending Under Biden reflect voting patterns either in Presidential or House Races, and is there a correlation between that spending and the results in 2024?**
+
+We compare federal obligations per capita across states using a Biden-era average (FY2021–FY2024) versus a pre-Biden baseline (FY2017–FY2020), then test how those changes align with 2024 presidential and House margins.
+
 # Libraries
 
 ```{r libraries}
@@ -423,7 +429,7 @@ spending_pc_states <- spending_pc |>
   mutate(state = toupper(state)) |>
   filter(state %in% valid_states)
 
-spending_delta < <-  spending_pc_states |>
+spending_delta <- spending_pc_states |>
   filter(fiscal_year %in% c(2020, 2024)) |>
   select(state, fiscal_year, obligations, oblig_pc) |>
   pivot_wider(
@@ -619,7 +625,8 @@ elections_2024 <- left_join(pres_2024, house_2024, by = "state")
 # Merge Spending and Elections
 
 ```{r merge}
-analysis <- spending_delta |>
+analysis <- delta_12_1 |>
+  select(state, delta_biden_vs_pre_pc) |>
   left_join(elections_2024, by = "state")
 ```
 
@@ -628,16 +635,35 @@ analysis <- spending_delta |>
 ## Spending Change vs 2024 Presidential Margin
 
 ```{r plot-pres}
-ggplot(analysis, aes(delta_pc, pres_margin_dem)) +
+pres_plot_data <- analysis |>
+  filter(!is.na(pres_margin_dem))
+
+pres_lm <- lm(pres_margin_dem ~ delta_biden_vs_pre_pc, data = pres_plot_data)
+pres_r2 <- summary(pres_lm)$r.squared
+pres_p <- summary(pres_lm)$coefficients[2, 4]
+
+pres_label <- sprintf("R2 = %.3f\np = %.3g", pres_r2, pres_p)
+
+ggplot(pres_plot_data, aes(delta_biden_vs_pre_pc, pres_margin_dem)) +
   geom_hline(yintercept = 0, linewidth = 0.25) +
   geom_vline(xintercept = 0, linewidth = 0.25) +
   geom_point() +
   geom_smooth(method = "lm", se = FALSE) +
+  annotate(
+    "label",
+    x = Inf, y = Inf,
+    label = pres_label,
+    hjust = 1.1, vjust = 1.1,
+    size = 4,
+    label.size = 0.25,
+    fill = "white",
+    color = "black"
+  ) +
   scale_x_continuous(labels = dollar) +
   scale_y_continuous(labels = percent) +
   labs(
-    title = "Change in Federal Spending vs 2024 Presidential Margin",
-    x = "Δ Federal Obligations per Capita (FY2024 − FY2020)",
+    title = "Change in Federal Spending (Biden Era vs Pre-Biden) vs 2024 Presidential Margin",
+    x = "Δ Federal Obligations per Capita (mean FY2021–FY2024 − mean FY2017–FY2020)",
     y = "2024 Presidential Margin (Dem − GOP)"
   )
 ```
@@ -646,39 +672,58 @@ ggplot(analysis, aes(delta_pc, pres_margin_dem)) +
 
 **What This Chart Shows:**
 
-This scatter plot examines whether changes in federal spending per capita between FY2020 and FY2024 correlate with how states voted in the 2024 presidential election. Each point represents one state (or DC), with:
+This scatter plot examines whether average federal spending per capita in the Biden era (FY2021–FY2024) versus the pre-Biden baseline (FY2017–FY2020) correlates with how states voted in the 2024 presidential election. Each point represents one state (or DC), with:
 
-- X-axis: Change in federal obligations per capita (positive = more spending in 2024; negative = less)
+- X-axis: Change in federal obligations per capita (positive = higher Biden-era average than pre-Biden)
 - Y-axis: 2024 Presidential margin (positive = Democratic win; negative = Republican win)
 - Fitted line: Linear regression showing the overall trend across all jurisdictions
 
 ### Analytical Findings:
 
-1. **Weak or Non-Existent Linear Relationship:** The fitted line's slope indicates little systematic correlation between changes in federal spending and how states voted in the 2024 presidential election.
+1. **Moderate Positive Association:** The fitted line is upward sloping, with a correlation of about **0.49** and an **R2 ~ 0.24**. States with larger per-capita spending increases tended to have more Democratic 2024 presidential margins, though the relationship is far from deterministic.
 
-2. **Wide Scatter Distribution:** States are distributed across all four quadrants, demonstrating that:
+2. **All States Show Positive Spending Change:** Because this compares two multi-year averages, every state has a positive delta. That means all points fall in the **positive-spending** half, split between **Dem margins (20 states)** and **GOP margins (31 states)**. The partisan split underscores that spending increases did not uniformly translate into electoral support.
 
-- Some states received more spending but still voted Republican
-- Some states received less spending but voted Democratic
-- The relationship is not deterministic: many other factors influence voting behavior
+3. **Notable Outliers:** Several states sit far from the trend line, suggesting other forces dominate:
 
-3. **No Evidence of Electoral Spending Strategy:** The weak correlation suggests federal spending changes did not translate into predictable electoral support in 2024.
+- **KY**: large spending increase but strong GOP margin
+- **VT**: moderate spending increase paired with strong Democratic margin
+- **WY**, **WV**, **MD**: sizable residuals in opposite directions
 
-4. **Outlier Influence:** Individual states that deviate significantly from the trend line represent cases where local political, economic, or demographic factors overwhelmed any spending-related patterns.
+4. **Correlation, Not Causation:** Even with a measurable association, this remains observational. Spending levels, state economies, and political alignment interact in ways this bivariate plot cannot disentangle.
 
 ## Spending Change vs 2024 House Margin
 
 ```{r plot-house}
-ggplot(analysis, aes(delta_pc, house_margin_dem)) +
+house_plot_data <- analysis |>
+  filter(!is.na(house_margin_dem))
+
+house_lm <- lm(house_margin_dem ~ delta_biden_vs_pre_pc, data = house_plot_data)
+house_r2 <- summary(house_lm)$r.squared
+house_p <- summary(house_lm)$coefficients[2, 4]
+
+house_label <- sprintf("R2 = %.3f\np = %.3g", house_r2, house_p)
+
+ggplot(house_plot_data, aes(delta_biden_vs_pre_pc, house_margin_dem)) +
   geom_hline(yintercept = 0, linewidth = 0.25) +
   geom_vline(xintercept = 0, linewidth = 0.25) +
   geom_point() +
   geom_smooth(method = "lm", se = FALSE) +
+  annotate(
+    "label",
+    x = Inf, y = Inf,
+    label = house_label,
+    hjust = 1.1, vjust = 1.1,
+    size = 4,
+    label.size = 0.25,
+    fill = "white",
+    color = "black"
+  ) +
   scale_x_continuous(labels = dollar) +
   scale_y_continuous(labels = percent) +
   labs(
-    title = "Change in Federal Spending vs 2024 House Margin",
-    x = "Δ Federal Obligations per Capita (FY2024 − FY2020)",
+    title = "Change in Federal Spending (Biden Era vs Pre-Biden) vs 2024 House Margin",
+    x = "Δ Federal Obligations per Capita (mean FY2021–FY2024 − mean FY2017–FY2020)",
     y = "2024 House Margin (Dem − GOP)"
   )
 ```
@@ -695,15 +740,13 @@ This scatter plot tests whether federal spending changes correlate with aggregat
 
 ### Analytical Findings:
 
-1. **Similar Pattern to Presidential Results:** House margins show a comparable relationship to spending changes as presidential results, suggesting federal spending patterns didn't strongly influence congressional voting either.
+1. **Moderate Positive Association:** The House margin relationship is somewhat stronger, with a correlation of about **0.57** and **R2 ~ 0.32**. States with larger spending increases generally show more Democratic House margins, though there is still substantial dispersion.
 
-2. **More Granular Electoral Data:** House margins aggregate many districts within each state, providing a different measure of political sentiment that may be less sensitive to statewide spending changes.
+2. **District Aggregation Still Blurs Signal:** House results are the sum of many district contests. A state’s aggregate margin can mask district‑level swings that are unrelated to statewide spending changes.
 
-3. **State-Level Aggregation Limitations:** Since House races are district-by-district, aggregating to state-level obscures local variations: some districts may have benefited greatly from spending while others didn't.
+3. **Outliers Highlight Local Dynamics:** States with large residuals include **HI**, **VT**, **WY**, **MD**, and **SD**, indicating that local political factors can overwhelm any spending-related pattern.
 
-4. **Consistency Across Election Types:** The similarity between presidential and House scatter patterns reinforces that the spending-voting relationship (or lack thereof) is consistent across different types of federal elections.
-
-5. **Observational Correlation Only:** These findings represent correlation, not causation. Federal spending decisions, electoral outcomes, and numerous confounding variables interact in complex ways that this analysis cannot disentangle.
+4. **Correlation, Not Causation:** As with the presidential plot, this is an observational association. The chart does not establish whether spending affects votes or whether both reflect deeper structural factors.
 
 # Section 12.1 :  Biden-era Delta vs Pre-Biden Baseline
 
@@ -734,41 +777,21 @@ This bar chart compares average federal obligations per capita during the Biden 
 
 ### Spending Growth Patterns:
 
-1. **North Dakota Shows Dramatic Decline:** ND experienced the largest negative change (approximately −$10,000 per capita), representing a massive reduction in federal obligations. Potential explanations:
+1. **All States Show Increases vs Pre-Biden Baseline:** Every state (and DC) has a **positive** per-capita change. The smallest increase is roughly **+$569** (AL), while the largest is about **+$27,032** (DC).
 
-- Reduced energy sector subsidies reflecting Biden administration's shift away from fossil fuel support
-- Completion of major infrastructure projects active during FY2017–2020
-- Changes in agricultural support programs
-- Wind-down of pandemic-related emergency spending that disproportionately flowed to ND in FY2020
+2. **Largest Increases Concentrated in a Few States:** The biggest per-capita gains are in **DC (+$27.0k)**, **MN (+$14.4k)**, **KY (+$11.1k)**, **CT (+$9.2k)**, and **AK (+$7.0k)**. Small-population jurisdictions amplify per-capita effects, which helps explain DC's extreme value.
 
-2. **DC Shows Strong Positive Growth:** Washington DC experienced significant increases in per-capita federal obligations during the Biden era, likely reflecting:
-
-- Increased federal workforce spending and operations
-- Infrastructure investments in the nation's capital
-- Expansion of federal programs headquartered in DC
-- Biden administration's emphasis on strengthening federal institutions
-
-3. **Small Population States Show Extremes:** States like ND (large negative) and DC (positive) show the most dramatic per-capita swings because small denominators amplify the impact of absolute dollar changes.
+3. **Smallest Increases Cluster Near the Baseline:** The lowest increases are in **AL (+$569)**, **WI (+$751)**, **IA (+$1,572)**, **GA (+$1,594)**, and **TN (+$1,595)**, indicating relatively flat change compared to other states.
 
 ### Political Alignment Patterns:
 
-1. **Mixed Partisan Pattern:** Both Trump-won states (red) and Biden-won states (blue) appear across the entire spectrum from large negative to large positive changes, though some notable patterns emerge
+1. **Balanced Partisan Mix Among Increases:** The distribution of gains is split almost evenly: **26 Biden-won states** and **25 Trump-won states** show increases, indicating no simple partisan allocation pattern at the state level.
 
-2. **ND and DC as Extreme Cases:**
-
-- ND (solidly Republican) experienced the largest decline under a Democratic administration
-- DC (overwhelmingly Democratic) gained significantly
-- These cases could support claims of partisan allocation, though sectoral policy explanations (energy sector decline in ND, federal operations expansion in DC) are equally or more plausible
-
-3. **Trump States in Both Directions:** Republican-won states appear in both positive and negative change categories. If partisan favoritism were systematic, we would expect most or all Republican states clustered in the negative range: but this is not the case.
-
-4. **Biden States Also Mixed:** Democratic-won states similarly show both increases and decreases, suggesting that 2020 electoral outcomes alone do not predict spending changes.
+2. **Extremes Are Not Exclusively Partisan:** Large increases appear in both Biden-won (DC, MN, CT) and Trump-won (KY, AK) states, reinforcing that sectoral and programmatic factors likely dominate over electoral alignment.
 
 ### Sectoral and Policy Implications:
 
-1. **Energy State Decline:** ND's massive decline likely reflects sectoral policy shifts: the Biden administration's movement away from fossil fuel development would disproportionately impact major oil and gas producing states.
-
-2. **Policy Over Politics:** The distribution pattern suggests federal spending changes were driven primarily by:
+1. **Policy Over Politics:** The broad, across-the-board increases suggest that national policy shifts (pandemic recovery, infrastructure, and program growth) outweighed state-level partisan targeting. The scale of changes appears driven by:
 
 - Sectoral policy priorities (energy transition, infrastructure modernization)
 - Economic conditions and programmatic needs
@@ -819,3 +842,46 @@ This preserves full resolution and allows text editing directly in PowerPoint.
 - Results should be interpreted as correlational.
 - Spending data are total federal obligations.
 - Further robustness checks (e.g., grants-only or agency-specific spending) are encouraged.
+
+# Data Sources and Processing
+
+This page lists local data files used in the analysis, their original sources, and a brief summary of how each was processed.
+
+**Summary Answer**
+
+Spending increases in the Biden era are broad-based across states, but the scatter plots show only moderate positive associations with 2024 presidential and House margins. The relationship is real but not deterministic: states with similar spending changes often voted differently, and outliers remain. In short, spending shifts alone do not explain 2024 election outcomes, though they move in the same direction on average.
+
+**USAspending (federal obligations by state, FY2017–FY2024)**  
+Local file: Not stored locally (pulled live via API during analysis)  
+Source: https://api.usaspending.gov/api/v2/search/spending_by_geography/  
+Processing: API responses are normalized to state abbreviations, then combined with Census population to compute per-capita obligations and multi-year averages.
+
+**Census population estimates (2010s series)**  
+Local file: [NST-EST2019-ALLDATA.csv](NST-EST2019-ALLDATA.csv)  
+Source: https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/national/totals/nst-est2019-alldata.csv  
+Processing: Filtered to SUMLEV 40 (states + DC), then reshaped to long format for 2017–2019 and mapped to state abbreviations.
+
+**Census population estimates (2020s series)**  
+Local file: [NST-EST2024-ALLDATA.csv](NST-EST2024-ALLDATA.csv)  
+Source: https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/state/totals/NST-EST2024-ALLDATA.csv  
+Processing: Filtered to SUMLEV 40 (states + DC), then reshaped to long format for 2020–2024 and mapped to state abbreviations. Combined with 2010s series to build `population_by_state_fy.csv`.
+
+**Combined population by state and fiscal year**  
+Local file: [population_by_state_fy.csv](population_by_state_fy.csv)  
+Source: Derived from the two Census files above  
+Processing: Union of 2017–2024 state populations with standardized `state`, `fiscal_year`, and `pop` fields used for per-capita metrics.
+
+**2024 presidential results (state level)**  
+Local file: [2024-electoral-states.csv](2024-electoral-states.csv)  
+Source: https://michaelminn.net/tutorials/data/2024-electoral-states.csv  
+Processing: Cleaned column names and converted to a Democratic margin: (Dem votes − GOP votes) / (Dem + GOP).
+
+**2024 House results (district level)**  
+Local file: [2024-electoral-districts.csv](2024-electoral-districts.csv)  
+Source: https://michaelminn.net/tutorials/data/2024-electoral-districts.csv  
+Processing: Aggregated by state to compute a statewide House margin using total Dem and GOP votes.
+
+**2020 presidential results (for 2020 winner coloring)**  
+Local file: [president_2020.csv](president_2020.csv)  
+Source: User-provided (original source not embedded in the file)  
+Processing: Filtered to 2020 and the two major candidates, then assigned a state winner based on total votes per candidate.
