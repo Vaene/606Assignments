@@ -1,0 +1,12 @@
+{
+  "name": "chartjs-first-chart-live",
+  "private": true,
+  "version": "0.3.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npx http-server -c-1 -p 8080 ."
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
