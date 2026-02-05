@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Chart as ChartJS, BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend } from 'chart.js';
+import { Chart as ChartJS, BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend, TooltipItem } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 
 ChartJS.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend, ChartDataLabels);
@@ -119,6 +119,11 @@ export default function Home() {
   const chartRef = useRef<ChartJS | null>(null);
   const [status, setStatus] = useState('Loading USAspending data…');
   const [loading, setLoading] = useState(true);
+  const [animationComplete, setAnimationComplete] = useState(false);
+  const [displayedWords, setDisplayedWords] = useState(0);
+
+  const chartDescription = 'This chart compares federal obligations by state in FY2024 versus the pre-Biden baseline average from FY2017–FY2020. States are ordered by maximum spending, with each state showing two bars: the lighter bar represents the historical average, and the darker bars show FY2024 levels. Colors represent the 2020 presidential election winner in each state, revealing how federal spending changed under different electoral contexts.';
+  const words = chartDescription.split(' ');
 
   useEffect(() => {
     async function main() {
@@ -180,10 +185,10 @@ export default function Home() {
       const fy24 = labels.map((st) => fy24ByState.get(st) ?? 0);
 
       const preColors = labels.map((st) =>
-        hexToRgba(COLORS[winnerMap[st] ?? 'Unknown'] ?? COLORS.Unknown, 0.4)
+        hexToRgba(COLORS[(winnerMap[st] ?? 'Unknown') as keyof typeof COLORS] ?? COLORS.Unknown, 0.4)
       );
       const fy24Colors = labels.map((st) =>
-        hexToRgba(COLORS[winnerMap[st] ?? 'Unknown'] ?? COLORS.Unknown, 0.7)
+        hexToRgba(COLORS[(winnerMap[st] ?? 'Unknown') as keyof typeof COLORS] ?? COLORS.Unknown, 0.7)
       );
 
       chartRef.current = new ChartJS(canvasRef.current, {
@@ -212,8 +217,9 @@ export default function Home() {
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          devicePixelRatio: window.devicePixelRatio || 1,
           indexAxis: 'y' as const,
-          layout: { padding: { left: 6, right: 12, top: 18, bottom: 6 } },
+          layout: { padding: { left: 6, right: 12, top: 8, bottom: 6 } },
           animation: {
             duration: ANIM.barDurationMs,
             easing: 'easeOutQuart' as any,
@@ -223,8 +229,8 @@ export default function Home() {
             legend: { display: false },
             tooltip: {
               callbacks: {
-                title: (items) => items?.[0]?.label ?? '',
-                label: (c) => `${c.dataset.label}: ${formatMoneyCompact(c.raw as number)}`
+                title: (items: TooltipItem<'bar'>[]) => items?.[0]?.label ?? '',
+                label: (c: TooltipItem<'bar'>) => `${c.dataset.label}: ${formatMoneyCompact(c.raw as number)}`
               }
             },
             datalabels: {
@@ -232,8 +238,8 @@ export default function Home() {
               anchor: 'end' as any,
               align: 'right' as any,
               color: '#111',
-              font: { size: 10, weight: '600' as any },
-              formatter: (v) => formatMoneyCompact(v),
+              font: { size: 8, weight: '600' as any },
+              formatter: (v: number) => formatMoneyCompact(v),
               clamp: true
             }
           },
@@ -251,8 +257,8 @@ export default function Home() {
               offset: true,
               ticks: {
                 color: '#111',
-                font: { size: 11, weight: '700' as any },
-                padding: 6
+                font: { size: 8, weight: '700' as any },
+                padding: 4
               }
             }
           }
@@ -264,30 +270,59 @@ export default function Home() {
     main();
   }, []);
 
-  const downloadPNG = () => {
-    if (!chartRef.current) return;
-    const link = document.createElement('a');
-    link.href = chartRef.current.canvas.toDataURL('image/png');
-    link.download = `federal-obligations-${new Date().toISOString().split('T')[0]}.png`;
-    link.click();
-  };
+  useEffect(() => {
+    if (loading || !chartRef.current) return;
+
+    // Start word animation after chart animation completes
+    // Estimate: last bar finishes at ~barDurationMs + (num_states * perBarStaggerMs)
+    const estimatedChartAnimEnd = ANIM.barDurationMs + 50 * ANIM.perBarStaggerMs + ANIM.labelLagMs + 300;
+
+    const animationTimeout = setTimeout(() => {
+      let wordIndex = 0;
+      const wordInterval = setInterval(() => {
+        wordIndex++;
+        setDisplayedWords(wordIndex);
+        if (wordIndex >= words.length) {
+          clearInterval(wordInterval);
+        }
+      }, 80); // Word reveal interval (80ms per word)
+
+      return () => clearInterval(wordInterval);
+    }, estimatedChartAnimEnd);
+
+    return () => clearTimeout(animationTimeout);
+  }, [loading, words.length]);
 
   return (
-    <main className="min-h-screen bg-gray-50 p-8">
-      <div className="mx-auto max-w-6xl rounded-lg bg-white p-6 shadow">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-sm text-gray-600">{status}</div>
-          {!loading && (
-            <button
-              onClick={downloadPNG}
-              className="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600"
-            >
-              Download PNG
-            </button>
-          )}
+    <main className="min-h-screen bg-gray-50 p-4 md:p-8">
+      <div className="mx-auto max-w-6xl rounded-lg bg-white p-6 shadow flex flex-col h-screen">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">
+            Federal Obligations by State: FY2024 vs Pre-Biden Baseline
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Mean(FY2017–FY2020) versus FY2024, colored by 2020 presidential winner
+          </p>
         </div>
-        <div className="relative h-[1000px]">
-          <canvas ref={canvasRef} id="barTotal"></canvas>
+        <div className="mb-4">
+          <div className="text-sm text-gray-600">{status}</div>
+        </div>
+        <div className="relative flex-1">
+          <canvas ref={canvasRef} id="barTotal" className="w-full h-full"></canvas>
+          {!loading && (
+            <div className="absolute top-1/3 right-4 md:right-8 w-72 md:w-80 h-auto z-10 bg-white rounded-lg p-4 shadow-md md:shadow-lg">
+              <p className="text-sm leading-relaxed text-gray-700 whitespace-normal break-normal">
+                {words.slice(0, displayedWords).map((word, idx) => (
+                  <span key={idx} className="inline animate-fadeIn">
+                    {word}{' '}
+                  </span>
+                ))}
+                {displayedWords < words.length && (
+                  <span className="inline-block h-4 w-0.5 ml-1 bg-blue-500 animate-pulse"></span>
+                )}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </main>
