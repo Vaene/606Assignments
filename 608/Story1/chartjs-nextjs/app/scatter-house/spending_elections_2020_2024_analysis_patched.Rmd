@@ -1,0 +1,899 @@
+---
+title: "Federal Spending, Political Alignment, and Elections (2020–2024)"
+author: "Randy Howk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+```
+
+# Purpose and Research Questions
+
+This analysis examines whether changes in federal spending between FY2020 and FY2024:
+
+1. Varied meaningfully across states  
+2. Were associated with Biden’s 2020 electoral support  
+3. Were associated with 2024 election outcomes for President, and House  
+
+The analysis is **observational** and evaluates correlation, not causation.
+
+# Intro Question
+
+****
+
+We compare federal obligations per capita across states using a Biden-era average (FY2021–FY2024) versus a pre-Biden baseline (FY2017–FY2020), then test how those changes align with 2024 presidential and House margins.
+
+# Libraries
+
+```{r libraries}
+library(tidyverse)
+library(janitor)
+library(lubridate)
+library(httr)
+library(jsonlite)
+library(readxl)
+library(scales)
+library(ggrepel)
+library(usmap)
+```
+
+# Minimal-Ink Visualization Theme
+
+# Low-Ink Visualization Style Guide (bbplot)
+
+This document uses a single **low-ink-to-data** style guide for consistent, uncluttered charts.
+
+```{r theme}
+library(ggplot2)
+library(scales)
+
+if (!requireNamespace("bbplot", quietly = TRUE)) {
+  if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
+  remotes::install_github("bbc/bbplot")
+}
+library(bbplot)
+
+# Strict low-ink theme: no gridlines, no axis lines, small labels
+theme_low_ink <- function(base_size = 11) {
+  bbplot::bbc_style() %+replace% theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    axis.line = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.y = element_text(size = base_size * 0.6),
+    axis.text.x = element_text(size = base_size * 0.7),
+    legend.title = element_blank(),
+    legend.position = "none",
+    plot.title.position = "plot",
+    plot.title = element_text(margin = margin(b = 6)),
+    plot.subtitle = element_text(margin = margin(b = 8))
+  )
+}
+
+theme_set(theme_low_ink())
+
+# Party color scale (muted, low-ink)
+scale_party_fill <- function(...) {
+  scale_fill_manual(
+    values = c(
+      "Biden" = "#2166AC",  # muted Dem blue
+      "Trump" = "#B2182B"   # muted GOP red
+    ),
+    ...
+  )
+}
+
+label_billions <- label_dollar(scale = 1e-9, suffix = "B", accuracy = 0.1)
+label_dollars1 <- label_dollar(accuracy = 1)
+label_pct1 <- label_percent(accuracy = 1)
+```
+
+
+
+# Federal Spending Data (USAspending)
+
+```{r usaspending-functions}
+usaspending_post <- function(endpoint, body) {
+  res <- POST(
+    url = paste0("https://api.usaspending.gov", endpoint),
+    body = body,
+    encode = "json",
+    add_headers(`Content-Type` = "application/json")
+  )
+  stop_for_status(res)
+  content(res, as = "parsed", simplifyVector = TRUE)
+}
+
+get_state_obligations <- function(fy) {
+  body <- list(
+    scope = "place_of_performance",
+    geo_layer = "state",
+    filters = list(
+      time_period = list(list(
+        start_date = paste0(fy - 1, "-10-01"),
+        end_date   = paste0(fy, "-09-30")
+      ))
+    )
+  )
+
+  out <- usaspending_post("/api/v2/search/spending_by_geography/", body)
+
+  # Robustly normalize the results payload. Depending on httr/content parsing,
+  # `out$results` may be a data.frame/tibble OR a list of records.
+  res <- out$results
+  if (is.null(res) || length(res) == 0) {
+    return(tibble(state = character(), fiscal_year = integer(), obligations = numeric()))
+  }
+
+  if (is.data.frame(res)) {
+    return(tibble(
+      state = toupper(res$shape_code),
+      fiscal_year = fy,
+      obligations = res$aggregated_amount
+    ))
+  }
+
+  tibble(
+    state = toupper(purrr::map_chr(res, "shape_code")),
+    fiscal_year = fy,
+    obligations = purrr::map_dbl(res, "aggregated_amount")
+  )
+}
+```
+
+```{r spending-pull-and-baseline, message=FALSE}
+library(tidyverse)
+library(janitor)
+library(scales)
+
+# Compare baseline vs FY2024 using alpha (no patterns)
+
+# Ensure population table exists (created in the population chunk). If knitting from the middle,
+# we'll load it from disk to avoid execution-order issues.
+if (!exists("pop")) {
+  if (file.exists("population_by_state_fy.csv")) {
+    pop <- readr::read_csv("population_by_state_fy.csv", show_col_types = FALSE) |>
+      janitor::clean_names() |>
+      dplyr::transmute(
+        state = toupper(state),
+        fiscal_year = as.integer(fiscal_year),
+        pop = as.numeric(pop)
+      )
+    message("Loaded pop from population_by_state_fy.csv")
+
+# Ensure pres2020 exists (created in pres2020 chunk). If knitting from the middle,
+# we'll derive it from local election files.
+if (!exists("pres2020")) {
+  if (file.exists("president_2020.csv")) {
+
+    pres_long <- readr::read_csv("president_2020.csv", show_col_types = FALSE) |>
+      janitor::clean_names() |>
+      dplyr::filter(year == 2020) |>
+      dplyr::mutate(state = toupper(state_po))
+
+  } else if (file.exists("1976-2020-president.csv")) {
+
+    pres_long <- readr::read_csv("1976-2020-president.csv", show_col_types = FALSE) |>
+      janitor::clean_names() |>
+      dplyr::filter(year == 2020) |>
+      dplyr::mutate(state = toupper(state_po))
+
+  } else {
+    stop("pres2020 not found and no election file present. Add president_2020.csv (preferred) or 1976-2020-president.csv, or knit from the top.")
+  }
+
+  pres2020 <- pres_long |>
+    dplyr::group_by(state) |>
+    dplyr::summarize(
+      votes_biden = sum(candidatevotes[stringr::str_detect(toupper(candidate), "BIDEN")], na.rm = TRUE),
+      votes_trump = sum(candidatevotes[stringr::str_detect(toupper(candidate), "TRUMP")], na.rm = TRUE),
+      biden_share_2p = votes_biden / (votes_biden + votes_trump),
+      biden_won = votes_biden > votes_trump,
+      .groups = "drop"
+    ) |>
+    dplyr::mutate(
+      winner_2020 = dplyr::if_else(biden_won, "Biden", "Trump"),
+      winner_2020 = factor(winner_2020, levels = c("Biden", "Trump"))
+    )
+
+  message("Derived pres2020 from local election file.")
+}
+
+  } else {
+    stop("Population table `pop` not found. Knit from the top (Run All), or ensure the population chunk runs first to create population_by_state_fy.csv.")
+  }
+}
+
+
+# Pull spending for FY2017–FY2024 (needed for Pre vs Biden baseline and FY2024 levels)
+spending <- purrr::map_dfr(2017:2024, get_state_obligations)
+
+# Sanity check to avoid blank charts
+spend_check <- spending |>
+  count(fiscal_year, name = "n_states") |>
+  arrange(fiscal_year)
+print(spend_check)
+
+if (nrow(spending) == 0) stop("USAspending returned 0 rows. Check connectivity/API response.")
+if (any(spend_check$n_states < 40)) warning("Some years returned fewer than 40 states; plots may be incomplete.")
+
+# Merge population for per-capita measures (pop is created in the population chunk)
+if (!exists("pop")) stop("Population table `pop` not found. Ensure the population chunk runs before this chunk.")
+
+spending_pc <- spending |>
+  left_join(pop, by = c("state","fiscal_year")) |>
+  mutate(oblig_pc = obligations / pop)
+
+# Pre-Biden baseline (FY17–FY20 avg) and Biden era (FY21–FY24 avg)
+spend_era <- spending_pc |>
+  mutate(
+    era = case_when(
+      fiscal_year %in% 2017:2020 ~ "Pre (FY17–FY20 avg)",
+      fiscal_year %in% 2021:2024 ~ "Biden (FY21–FY24 avg)",
+      TRUE ~ NA_character_
+    )
+  ) |>
+  filter(!is.na(era)) |>
+  group_by(state, era) |>
+  summarize(
+    total = mean(obligations, na.rm = TRUE),
+    pc    = mean(oblig_pc, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  pivot_wider(names_from = era, values_from = c(total, pc)) |>
+  rename(
+    pre_total   = `total_Pre (FY17–FY20 avg)`,
+    biden_total = `total_Biden (FY21–FY24 avg)`,
+    pre_pc      = `pc_Pre (FY17–FY20 avg)`,
+    biden_pc    = `pc_Biden (FY21–FY24 avg)`
+  ) |>
+  mutate(
+    delta_biden_vs_pre_total = biden_total - pre_total,
+    delta_biden_vs_pre_pc    = biden_pc - pre_pc
+  )
+
+# FY2024 levels (solid bars)
+fy2024 <- spending_pc |>
+  filter(fiscal_year == 2024) |>
+  select(state, total_2024 = obligations, pc_2024 = oblig_pc)
+
+# Bar chart data: baseline (striped) vs FY2024 (solid), colored by 2020 winner
+if (!exists("pres2020")) stop("pres2020 not found. Ensure the pres2020 chunk runs before the bar charts.")
+
+bars_total <- fy2024 |>
+  select(state, value = total_2024) |>
+  mutate(series = "FY2024") |>
+  bind_rows(
+    spend_era |>
+      select(state, value = pre_total) |>
+      mutate(series = "Pre (FY17–FY20 avg)")
+  ) |>
+  left_join(pres2020 |> select(state, winner_2020), by = "state") |>
+  mutate(series = factor(series, levels = c("Pre (FY17–FY20 avg)", "FY2024")))
+
+bars_pc <- fy2024 |>
+  select(state, value = pc_2024) |>
+  mutate(series = "FY2024") |>
+  bind_rows(
+    spend_era |>
+      select(state, value = pre_pc) |>
+      mutate(series = "Pre (FY17–FY20 avg)")
+  ) |>
+  left_join(pres2020 |> select(state, winner_2020), by = "state") |>
+  mutate(series = factor(series, levels = c("Pre (FY17–FY20 avg)", "FY2024")))
+
+# Section 12.1 delta dataset
+delta_12_1 <- spend_era |>
+  left_join(pres2020 |> select(state, winner_2020), by = "state")
+```
+
+# Population Data (User-Supplied)
+
+Provide a CSV named `population_by_state_fy.csv` with columns:
+
+- `state`
+- `fiscal_year`
+- `pop`
+
+```{r population, message=FALSE}
+library(tidyverse)
+library(janitor)
+library(readr)
+library(stringr)
+
+# Build accurate state populations for FY2017–FY2024 using Census Population Estimates:
+# - 2010–2019 series for 2017–2019
+# - 2020–2024 series for 2020–2024
+#
+# If the source CSVs are not present, this chunk will download them from Census.
+
+POP_OUT <- "population_by_state_fy.csv"
+
+CENSUS_2010S_FILE <- "NST-EST2019-ALLDATA.csv"
+CENSUS_2020S_FILE <- "NST-EST2024-ALLDATA.csv"
+
+CENSUS_2010S_URL <- "https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/national/totals/nst-est2019-alldata.csv"
+CENSUS_2020S_URL <- "https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/state/totals/NST-EST2024-ALLDATA.csv"
+
+# If you've already created POP_OUT, we use it for speed + reproducibility.
+if (file.exists(POP_OUT)) {
+
+  pop <- read_csv(POP_OUT, show_col_types = FALSE) |>
+    clean_names() |>
+    transmute(
+      state = toupper(state),
+      fiscal_year = as.integer(fiscal_year),
+      pop = as.numeric(pop)
+    )
+
+} else {
+
+  # Download Census source files if missing
+  if (!file.exists(CENSUS_2010S_FILE)) {
+    download.file(CENSUS_2010S_URL, destfile = CENSUS_2010S_FILE, mode = "wb", quiet = TRUE)
+  }
+  if (!file.exists(CENSUS_2020S_FILE)) {
+    download.file(CENSUS_2020S_URL, destfile = CENSUS_2020S_FILE, mode = "wb", quiet = TRUE)
+  }
+
+  pop_2010s_raw <- read_csv(CENSUS_2010S_FILE, show_col_types = FALSE) |> clean_names()
+  pop_2020s_raw <- read_csv(CENSUS_2020S_FILE, show_col_types = FALSE) |> clean_names()
+
+  # Keep only state-level rows: SUMLEV == 40 (states), plus DC (also SUMLEV 40 in these files)
+  # Puerto Rico is included; keep it if you want, but our later charts focus on states + DC.
+  pop_2010s <- pop_2010s_raw |>
+    filter(sumlev == 40) |>
+    select(name, starts_with("popestimate")) |>
+    mutate(name = toupper(name))
+
+  pop_2020s <- pop_2020s_raw |>
+    filter(sumlev == 40) |>
+    select(name, starts_with("popestimate")) |>
+    mutate(name = toupper(name))
+
+  # State name -> abbreviation (50 states + DC)
+  state_lu <- tibble(
+    name = toupper(state.name),
+    state = state.abb
+  ) |>
+    add_row(name = "DISTRICT OF COLUMBIA", state = "DC")
+
+  # 2017–2019 from 2010s file; 2020–2024 from 2020s file
+  pop_2017_2019 <- pop_2010s |>
+    inner_join(state_lu, by = "name") |>
+    pivot_longer(
+      cols = matches("^popestimate(2017|2018|2019)$"),
+      names_to = "year",
+      values_to = "pop"
+    ) |>
+    mutate(
+      fiscal_year = as.integer(str_extract(year, "\\d{4}")),
+      pop = as.numeric(pop)
+    ) |>
+    select(state, fiscal_year, pop)
+
+  pop_2020_2024 <- pop_2020s |>
+    inner_join(state_lu, by = "name") |>
+    pivot_longer(
+      cols = matches("^popestimate(2020|2021|2022|2023|2024)$"),
+      names_to = "year",
+      values_to = "pop"
+    ) |>
+    mutate(
+      fiscal_year = as.integer(str_extract(year, "\\d{4}")),
+      pop = as.numeric(pop)
+    ) |>
+    select(state, fiscal_year, pop)
+
+  pop <- bind_rows(pop_2017_2019, pop_2020_2024) |>
+    arrange(state, fiscal_year)
+
+  # Save a tidy, analysis-ready file for your zip bundle
+  write_csv(pop, POP_OUT)
+  message("Created ", POP_OUT, " using Census sources: ", CENSUS_2010S_FILE, " and ", CENSUS_2020S_FILE)
+}
+
+# Quick check: should cover FY2017–FY2024 for 51 entities (50 states + DC)
+pop_check <- pop |>
+  filter(fiscal_year %in% 2017:2024) |>
+  count(fiscal_year, name = "n_states") |>
+  arrange(fiscal_year)
+
+print(pop_check)
+```
+
+# Spending Deltas FY2020–FY2024
+
+```{r spending-delta, message=FALSE}
+# OPTION 1: Per-capita delta defined as FY2024 − FY2020 (states + DC only)
+
+valid_states <- c(state.abb, "DC")
+
+# For election-correlation charts, restrict to states + DC
+spending_pc_states <- spending_pc |>
+  mutate(state = toupper(state)) |>
+  filter(state %in% valid_states)
+
+spending_delta <- spending_pc_states |>
+  filter(fiscal_year %in% c(2020, 2024)) |>
+  select(state, fiscal_year, obligations, oblig_pc) |>
+  pivot_wider(
+    names_from = fiscal_year,
+    values_from = c(obligations, oblig_pc),
+    names_prefix = "fy"
+  ) |>
+  mutate(
+    delta_pc = oblig_pc_fy2024 - oblig_pc_fy2020,
+    delta_total = obligations_fy2024 - obligations_fy2020
+  )
+
+# Sanity check: should be ~51 rows and delta_pc should be non-missing
+print(spending_delta |>
+        summarize(n_rows = n(), n_delta_pc = sum(!is.na(delta_pc)), n_delta_total = sum(!is.na(delta_total))))
+```
+
+
+
+# 2020 Presidential Winner by State (for color encoding)
+
+Bars are colored by whether the state’s **electoral votes** went to **Biden** or **Trump** in 2020.  
+Provide a CSV named `president_2020.csv` in this folder (MIT Election Lab export recommended) with at least:
+
+- `year`
+- `state_po` (two-letter postal abbreviation)
+- `candidate`
+- `candidatevotes`
+
+```{r pres2020}
+PRES2020_FILE <- "president_2020.csv"
+
+if (!file.exists(PRES2020_FILE)) {
+  stop("Missing file: president_2020.csv. Put it in the same folder as this Rmd to color bars by Biden/Trump in 2020.")
+}
+
+pres_long <- read_csv(PRES2020_FILE, show_col_types = FALSE) |>
+  clean_names() |>
+  filter(year == 2020) |>
+  mutate(state = toupper(state_po))
+
+pres2020 <- pres_long |>
+  group_by(state) |>
+  summarize(
+    votes_biden = sum(candidatevotes[str_detect(toupper(candidate), "BIDEN")], na.rm = TRUE),
+    votes_trump = sum(candidatevotes[str_detect(toupper(candidate), "TRUMP")], na.rm = TRUE),
+    biden_share_2p = votes_biden / (votes_biden + votes_trump),
+    biden_won = votes_biden > votes_trump,
+    .groups = "drop"
+  ) |>
+  mutate(
+    winner_2020 = if_else(biden_won, "Biden", "Trump"),
+    winner_2020 = factor(winner_2020, levels = c("Biden", "Trump"))
+  )
+```
+
+# Bar Charts (FY2024): Spending and Spending Per Capita
+
+These charts use a **horizontal bar** layout for readable state labels, and follow the low-ink theme set above.
+
+## FY2024 Obligations by State (Total)
+
+```{r bar-total-compare, fig.height=10}
+# Ensure consistent series ordering within each state: Pre above FY2024
+pre_lab <- "Pre (FY17–FY20 avg)"
+fy24_lab <- "FY2024"
+
+# Order states by the maximum of the two series for readability
+state_order_total <- bars_total |>
+  group_by(state) |>
+  summarize(max_val = max(value, na.rm = TRUE), .groups = "drop") |>
+  arrange(max_val) |>
+  pull(state)
+
+# Force y-axis levels: for each state, Pre then FY2024
+y_levels_total <- c(rbind(
+  paste0(state_order_total, "  ", pre_lab),
+  paste0(state_order_total, "  ", fy24_lab)
+))
+
+bars_total_plot <- bars_total |>
+  mutate(
+    series = factor(series, levels = c(pre_lab, fy24_lab)),
+    alpha_series = if_else(series == pre_lab, 0.5, 1.0),
+    state_series = paste0(state, "  ", as.character(series)),
+    state_series = factor(state_series, levels = y_levels_total)
+  )
+
+ggplot(bars_total_plot, aes(x = value, y = state_series, fill = winner_2020, alpha = alpha_series)) +
+  geom_col(width = 0.75) +
+  scale_party_fill() +
+  scale_alpha_identity(guide = "none") +
+  scale_y_discrete(labels = function(x) {
+    st <- sub("  .*", "", x)
+    ifelse(duplicated(st), "", st)
+  }) +
+  scale_x_continuous(labels = label_billions) +
+  labs(
+    title = "Federal obligations by state: FY2024 vs pre-Biden baseline",
+    subtitle = "Top bar per state = mean(FY2017–FY2020); bottom bar = FY2024",
+    x = "Obligations (billions of $)",
+    y = NULL
+  ) +
+  theme_low_ink() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.y = element_text(size = 7)
+  )
+```
+
+### Key Observations
+
+1. **Why data beyond the IIJA snapshot:** The IIJA spreadsheet is a program‑specific funding snapshot, but the research question requires **total federal obligations** across all programs. The USAspending API provides full‑scope spending needed to compare eras and align with election outcomes.
+
+2. **Comparable time windows:** Using FY2017–FY2020 vs FY2024 creates a stable baseline instead of a single year or a single program, making changes more interpretable.
+
+## FY2024 Obligations Per Capita by State
+
+```{r bar-pc-compare, fig.height=10}
+# Ensure consistent series ordering within each state: Pre above FY2024
+pre_lab <- "Pre (FY17–FY20 avg)"
+fy24_lab <- "FY2024"
+
+# Order states by the maximum of the two series for readability
+state_order_pc <- bars_pc |>
+  group_by(state) |>
+  summarize(max_val = max(value, na.rm = TRUE), .groups = "drop") |>
+  arrange(max_val) |>
+  pull(state)
+
+# Force y-axis levels: for each state, Pre then FY2024
+y_levels_pc <- c(rbind(
+  paste0(state_order_pc, "  ", pre_lab),
+  paste0(state_order_pc, "  ", fy24_lab)
+))
+
+bars_pc_plot <- bars_pc |>
+  mutate(
+    series = factor(series, levels = c(pre_lab, fy24_lab)),
+    alpha_series = if_else(series == pre_lab, 0.5, 1.0),
+    state_series = paste0(state, "  ", as.character(series)),
+    state_series = factor(state_series, levels = y_levels_pc)
+  )
+
+ggplot(bars_pc_plot, aes(x = value, y = state_series, fill = winner_2020, alpha = alpha_series)) +
+  geom_col(width = 0.75) +
+  scale_party_fill() +
+  scale_alpha_identity(guide = "none") +
+  scale_y_discrete(labels = function(x) {
+    st <- sub("  .*", "", x)
+    ifelse(duplicated(st), "", st)
+  }) +
+  scale_x_continuous(labels = label_dollars1) +
+  labs(
+    title = "Federal obligations per capita by state: FY2024 vs pre-Biden baseline",
+    subtitle = "Top bar per state = mean(FY2017–FY2020); bottom bar = FY2024",
+    x = "Obligations per capita ($)",
+    y = NULL
+  ) +
+  theme_low_ink() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.y = element_text(size = 7)
+  )
+```
+
+### Key Observations
+
+1. **Why per‑capita is clearer:** Per‑capita spending controls for population size, revealing states that look small in total dollars but large **per resident**.
+
+2. **Per‑capita pitfalls:** Very small population states and DC can show extreme values because the denominator is small. These outliers are real but can **exaggerate swings**, so they should be read alongside totals.
+
+# 2024 Election Results
+
+```{r elections-2024}
+states_2024 <- read_csv("https://michaelminn.net/tutorials/data/2024-electoral-states.csv") |> clean_names()
+districts_2024 <- read_csv("https://michaelminn.net/tutorials/data/2024-electoral-districts.csv") |> clean_names()
+
+pres_2024 <- states_2024 |>
+  transmute(
+    state = st,
+    pres_margin_dem = (votes_dem_2024 - votes_gop_2024) /
+      (votes_dem_2024 + votes_gop_2024)
+  )
+
+house_2024 <- districts_2024 |>
+  group_by(st) |>
+  summarize(
+    house_margin_dem =
+      (sum(votes_dem_2024) - sum(votes_gop_2024)) /
+      (sum(votes_dem_2024) + sum(votes_gop_2024)),
+    .groups = "drop"
+  ) |>
+  rename(state = st)
+
+elections_2024 <- left_join(pres_2024, house_2024, by = "state")
+```
+
+# Merge Spending and Elections
+
+```{r merge}
+analysis <- delta_12_1 |>
+  select(state, delta_biden_vs_pre_pc) |>
+  left_join(elections_2024, by = "state")
+```
+
+# Results
+
+## Spending Change vs 2024 Presidential Margin
+
+```{r plot-pres}
+pres_plot_data <- analysis |>
+  filter(!is.na(pres_margin_dem))
+
+pres_lm <- lm(pres_margin_dem ~ delta_biden_vs_pre_pc, data = pres_plot_data)
+pres_r2 <- summary(pres_lm)$r.squared
+pres_p <- summary(pres_lm)$coefficients[2, 4]
+
+pres_label <- sprintf("R2 = %.3f\np = %.3g", pres_r2, pres_p)
+
+ggplot(pres_plot_data, aes(delta_biden_vs_pre_pc, pres_margin_dem)) +
+  geom_hline(yintercept = 0, linewidth = 0.25) +
+  geom_vline(xintercept = 0, linewidth = 0.25) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  annotate(
+    "label",
+    x = Inf, y = Inf,
+    label = pres_label,
+    hjust = 1.1, vjust = 1.1,
+    size = 4,
+    label.size = 0.25,
+    fill = "white",
+    color = "black"
+  ) +
+  scale_x_continuous(labels = dollar) +
+  scale_y_continuous(labels = percent) +
+  labs(
+    title = "Change in Federal Spending (Biden Era vs Pre-Biden) vs 2024 Presidential Margin",
+    x = "Δ Federal Obligations per Capita (mean FY2021–FY2024 − mean FY2017–FY2020)",
+    y = "2024 Presidential Margin (Dem − GOP)"
+  )
+```
+
+## Key Observations
+
+**What This Chart Shows:**
+
+This scatter plot examines whether average federal spending per capita in the Biden era (FY2021–FY2024) versus the pre-Biden baseline (FY2017–FY2020) correlates with how states voted in the 2024 presidential election. Each point represents one state (or DC), with:
+
+- X-axis: Change in federal obligations per capita (positive = higher Biden-era average than pre-Biden)
+- Y-axis: 2024 Presidential margin (positive = Democratic win; negative = Republican win)
+- Fitted line: Linear regression showing the overall trend across all jurisdictions
+
+### Analytical Findings:
+
+1. **Moderate Positive Association:** The fitted line is upward sloping, with a correlation of about **0.49** and an **R2 ~ 0.24**. States with larger per-capita spending increases tended to have more Democratic 2024 presidential margins, though the relationship is far from deterministic.
+
+2. **All States Show Positive Spending Change:** Because this compares two multi-year averages, every state has a positive delta. That means all points fall in the **positive-spending** half, split between **Dem margins (20 states)** and **GOP margins (31 states)**. The partisan split underscores that spending increases did not uniformly translate into electoral support.
+
+3. **Notable Outliers:** Several states sit far from the trend line, suggesting other forces dominate:
+
+- **KY**: large spending increase but strong GOP margin
+- **VT**: moderate spending increase paired with strong Democratic margin
+- **WY**, **WV**, **MD**: sizable residuals in opposite directions
+
+4. **Correlation, Not Causation:** Even with a measurable association, this remains observational. Spending levels, state economies, and political alignment interact in ways this bivariate plot cannot disentangle.
+
+## Spending Change vs 2024 House Margin
+
+```{r plot-house}
+house_plot_data <- analysis |>
+  filter(!is.na(house_margin_dem))
+
+house_lm <- lm(house_margin_dem ~ delta_biden_vs_pre_pc, data = house_plot_data)
+house_r2 <- summary(house_lm)$r.squared
+house_p <- summary(house_lm)$coefficients[2, 4]
+
+house_label <- sprintf("R2 = %.3f\np = %.3g", house_r2, house_p)
+
+ggplot(house_plot_data, aes(delta_biden_vs_pre_pc, house_margin_dem)) +
+  geom_hline(yintercept = 0, linewidth = 0.25) +
+  geom_vline(xintercept = 0, linewidth = 0.25) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  annotate(
+    "label",
+    x = Inf, y = Inf,
+    label = house_label,
+    hjust = 1.1, vjust = 1.1,
+    size = 4,
+    label.size = 0.25,
+    fill = "white",
+    color = "black"
+  ) +
+  scale_x_continuous(labels = dollar) +
+  scale_y_continuous(labels = percent) +
+  labs(
+    title = "Change in Federal Spending (Biden Era vs Pre-Biden) vs 2024 House Margin",
+    x = "Δ Federal Obligations per Capita (mean FY2021–FY2024 − mean FY2017–FY2020)",
+    y = "2024 House Margin (Dem − GOP)"
+  )
+```
+
+## Key Observations
+
+**What This Chart Shows:**
+
+This scatter plot tests whether federal spending changes correlate with aggregate House election outcomes at the state level. The analysis uses:
+
+- X-axis: Change in federal obligations per capita (FY2024 − FY2020)
+- Y-axis: State-level House margin (total Democratic votes − total Republican votes across all districts)
+- Fitted line: Linear regression trend
+
+### Analytical Findings:
+
+1. **Moderate Positive Association:** The House margin relationship is somewhat stronger, with a correlation of about **0.57** and **R2 ~ 0.32**. States with larger spending increases generally show more Democratic House margins, though there is still substantial dispersion.
+
+2. **District Aggregation Still Blurs Signal:** House results are the sum of many district contests. A state’s aggregate margin can mask district‑level swings that are unrelated to statewide spending changes.
+
+3. **Outliers Highlight Local Dynamics:** States with large residuals include **HI**, **VT**, **WY**, **MD**, and **SD**, indicating that local political factors can overwhelm any spending-related pattern.
+
+4. **Correlation, Not Causation:** As with the presidential plot, this is an observational association. The chart does not establish whether spending affects votes or whether both reflect deeper structural factors.
+
+# Section 12.1 :  Biden-era Delta vs Pre-Biden Baseline
+
+```{r delta-12-1, fig.height=10}
+delta_plot <- delta_12_1 |>
+  mutate(delta = delta_biden_vs_pre_pc) |>
+  arrange(delta) |>
+  mutate(state = factor(state, levels = state))
+
+ggplot(delta_plot, aes(x = delta, y = state, fill = winner_2020)) +
+  geom_col(width = 0.75) +
+  scale_party_fill(guide = "none") +
+  scale_x_continuous(labels = label_dollars1) +
+  labs(
+    title = "Change in obligations per capita: Biden era vs pre-Biden baseline",
+    subtitle = "Δ = mean(FY2021–FY2024) − mean(FY2017–FY2020)",
+    x = "Δ obligations per capita ($)",
+    y = NULL
+  ) +
+  theme_low_ink()
+```
+
+## Key Observations
+
+**What This Chart Shows:**
+
+This bar chart compares average federal obligations per capita during the Biden era (FY2021–FY2024) against the pre-Biden baseline (FY2017–FY2020). Bars extending right indicate increased spending; bars extending left indicate decreased spending. Colors represent which candidate won each state in 2020 (blue = Biden, red = Trump).
+
+### Spending Growth Patterns:
+
+1. **All States Show Increases vs Pre-Biden Baseline:** Every state (and DC) has a **positive** per-capita change. The smallest increase is roughly **+$569** (AL), while the largest is about **+$27,032** (DC).
+
+2. **Largest Increases Concentrated in a Few States:** The biggest per-capita gains are in **DC (+$27.0k)**, **MN (+$14.4k)**, **KY (+$11.1k)**, **CT (+$9.2k)**, and **AK (+$7.0k)**. Small-population jurisdictions amplify per-capita effects, which helps explain DC's extreme value.
+
+3. **Smallest Increases Cluster Near the Baseline:** The lowest increases are in **AL (+$569)**, **WI (+$751)**, **IA (+$1,572)**, **GA (+$1,594)**, and **TN (+$1,595)**, indicating relatively flat change compared to other states.
+
+### Political Alignment Patterns:
+
+1. **Balanced Partisan Mix Among Increases:** The distribution of gains is split almost evenly: **26 Biden-won states** and **25 Trump-won states** show increases, indicating no simple partisan allocation pattern at the state level.
+
+2. **Extremes Are Not Exclusively Partisan:** Large increases appear in both Biden-won (DC, MN, CT) and Trump-won (KY, AK) states, reinforcing that sectoral and programmatic factors likely dominate over electoral alignment.
+
+### Sectoral and Policy Implications:
+
+1. **Policy Over Politics:** The broad, across-the-board increases suggest that national policy shifts (pandemic recovery, infrastructure, and program growth) outweighed state-level partisan targeting. The scale of changes appears driven by:
+
+- Sectoral policy priorities (energy transition, infrastructure modernization)
+- Economic conditions and programmatic needs
+- Administrative policy shifts (pandemic program wind-downs, new infrastructure initiatives)
+- Rather than electoral reward/punishment strategies
+3. **Program Composition Matters:** Understanding which specific programs changed (defense spending, Medicare/Medicaid, infrastructure grants, energy subsidies, agricultural support) would be essential to fully explain these patterns.
+
+### Analytical Significance:
+
+1. **Challenges Simple Narratives:** This chart provides evidence against claims that the Biden administration systematically "rewarded" states that voted Democratic in 2020: the data show no clear partisan pattern.
+
+2. **Complex Causality:** The wide variation across states with different political alignments suggests federal spending patterns result from complex interactions of policy priorities, economic needs, programmatic structures, and institutional factors: not simple political calculations.
+
+3. **Observational Analysis:** These findings represent observed correlations between spending changes and political characteristics. Causation cannot be inferred: we cannot determine whether political factors influenced spending, whether spending influenced politics, or whether both were driven by other factors.
+
+# Exporting Charts to PowerPoint
+
+You have two recommended options:
+
+## Option A :  PNG workflow (simple)
+
+1. Knit this document.
+2. Right-click figures in the HTML output and save as images.
+3. Insert images into PowerPoint using **Insert → Pictures**.
+
+## Option B :  Vector PowerPoint workflow (recommended)
+
+Use `officer` + `rvg` to insert charts as editable vectors:
+
+```r
+library(officer)
+library(rvg)
+
+ppt <- read_pptx()
+ppt <- add_slide(ppt, layout = "Title and Content", master = "Office Theme")
+ppt <- ph_with(
+  ppt,
+  dml(ggobj = last_plot()),
+  location = ph_location_type(type = "body")
+)
+print(ppt, target = "spending_elections_2020_2024.pptx")
+```
+
+This preserves full resolution and allows text editing directly in PowerPoint.
+
+# Notes
+
+- Results should be interpreted as correlational.
+- Spending data are total federal obligations.
+- Further robustness checks (e.g., grants-only or agency-specific spending) are encouraged.
+
+# Data Sources and Processing
+
+This page lists local data files used in the analysis, their original sources, and a brief summary of how each was processed.
+
+**Summary Answer**
+
+Spending increases in the Biden era are broad-based across states, but the scatter plots show only moderate positive associations with 2024 presidential and House margins. The relationship is real but not deterministic: states with similar spending changes often voted differently, and outliers remain. In short, spending shifts alone do not explain 2024 election outcomes, though they move in the same direction on average.
+
+**USAspending (federal obligations by state, FY2017–FY2024)**  
+Local file: Not stored locally (pulled live via API during analysis)  
+Source: https://api.usaspending.gov/api/v2/search/spending_by_geography/  
+Processing: API responses are normalized to state abbreviations, then combined with Census population to compute per-capita obligations and multi-year averages.
+
+**Census population estimates (2010s series)**  
+Local file: [NST-EST2019-ALLDATA.csv](NST-EST2019-ALLDATA.csv)  
+Source: https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/national/totals/nst-est2019-alldata.csv  
+Processing: Filtered to SUMLEV 40 (states + DC), then reshaped to long format for 2017–2019 and mapped to state abbreviations.
+
+**Census population estimates (2020s series)**  
+Local file: [NST-EST2024-ALLDATA.csv](NST-EST2024-ALLDATA.csv)  
+Source: https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/state/totals/NST-EST2024-ALLDATA.csv  
+Processing: Filtered to SUMLEV 40 (states + DC), then reshaped to long format for 2020–2024 and mapped to state abbreviations. Combined with 2010s series to build `population_by_state_fy.csv`.
+
+**Combined population by state and fiscal year**  
+Local file: [population_by_state_fy.csv](population_by_state_fy.csv)  
+Source: Derived from the two Census files above  
+Processing: Union of 2017–2024 state populations with standardized `state`, `fiscal_year`, and `pop` fields used for per-capita metrics.
+
+**2024 presidential results (state level)**  
+Local file: [2024-electoral-states.csv](2024-electoral-states.csv)  
+Source: https://michaelminn.net/tutorials/data/2024-electoral-states.csv  
+Processing: Cleaned column names and converted to a Democratic margin: (Dem votes − GOP votes) / (Dem + GOP).
+
+**2024 House results (district level)**  
+Local file: [2024-electoral-districts.csv](2024-electoral-districts.csv)  
+Source: https://michaelminn.net/tutorials/data/2024-electoral-districts.csv  
+Processing: Aggregated by state to compute a statewide House margin using total Dem and GOP votes.
+
+**2020 presidential results (for 2020 winner coloring)**  
+Local file: [president_2020.csv](president_2020.csv)  
+Source: User-provided (original source not embedded in the file)  
+Processing: Filtered to 2020 and the two major candidates, then assigned a state winner based on total votes per candidate.

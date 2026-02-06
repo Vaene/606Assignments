@@ -89,6 +89,16 @@ const sources = [
       'Filtered to 2020 and the two major candidates, then assigned a state winner based on total votes.'
   },
   {
+    title: 'IIJA Funding Snapshot (March 2023)',
+    local: 'iija_funding_march_2023.csv',
+    localHref: '/data/iija_funding_march_2023.csv',
+    sourceLinks: [
+      { label: 'Original Excel file (local)', href: '/data/iija_funding_march_2023.xlsx' }
+    ],
+    processing:
+      'Converted from the IIJA Excel snapshot into CSV and mapped to state abbreviations for per-capita comparison.'
+  },
+  {
     title: 'Derived Files Used in the Presentation',
     local: 'winner_2020.json',
     localHref: '/data/winner_2020.json',
@@ -120,11 +130,12 @@ export default function SourcesPage() {
 
         <div className="mt-2 text-sm font-semibold text-gray-900">Summary</div>
         <div className="mt-3 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-sm leading-relaxed text-gray-700">
-          Spending increases in the Biden era are broad-based across states, but the scatter plots show only
-          moderate positive associations with 2024 presidential and House margins. The relationship is real
-          but not deterministic: states with similar spending changes often voted differently, and outliers
-          remain. In short, spending shifts alone do not explain 2024 election outcomes, though they move in
-          the same direction on average.
+          The IIJA snapshot motivates a broader look at total federal obligations. Across the full dataset,
+          spending increases in the Biden era are broad-based, but the scatter plots show only moderate
+          positive associations with 2024 presidential and House margins. The relationship is real but not
+          deterministic: states with similar spending changes often voted differently, and outliers remain.
+          In short, spending shifts alone do not explain 2024 election outcomes, though they move in the same
+          direction on average.
         </div>
 
         <div className="mt-6 text-sm font-semibold text-gray-900">Sources</div>
@@ -182,27 +193,30 @@ export default function SourcesPage() {
         </div>
 
         <div className="fixed bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 rounded-full border border-gray-200 bg-white/65 px-4 py-1 text-xs text-gray-600 shadow-md backdrop-blur scale-75 origin-bottom">
-          <span className="font-semibold text-gray-900">7 / 7</span>
+          <span className="font-semibold text-gray-900">8 / 8</span>
           <div className="flex items-center gap-2">
             <Link href="/intro" aria-label="Go to page 1">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/" aria-label="Go to page 2">
+            <Link href="/iija" aria-label="Go to page 2">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/per-capita" aria-label="Go to page 3">
+            <Link href="/totals" aria-label="Go to page 3">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/scatter-pres" aria-label="Go to page 4">
+            <Link href="/per-capita" aria-label="Go to page 4">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/scatter-house" aria-label="Go to page 5">
+            <Link href="/scatter-pres" aria-label="Go to page 5">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/delta-biden" aria-label="Go to page 6">
+            <Link href="/scatter-house" aria-label="Go to page 6">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/sources" aria-label="Go to page 7">
+            <Link href="/delta-biden" aria-label="Go to page 7">
+              <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
+            </Link>
+            <Link href="/sources" aria-label="Go to page 8">
               <span className="block h-2 w-2 rounded-full bg-gray-900"></span>
             </Link>
           </div>

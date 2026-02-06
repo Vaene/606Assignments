@@ -184,7 +184,7 @@ export default function PerCapitaPage() {
   const [viewMode, setViewMode] = useState<'desc' | 'key'>('desc');
 
   const chartDescription =
-    'This chart compares federal obligations per capita by state in FY2024 versus the pre-Biden baseline average from FY2017–FY2020. States are ordered by maximum per-capita spending, with each state showing two bars: the lighter bar represents the historical average per person, and the darker bars show FY2024 levels. Colors represent the 2020 presidential election winner in each state, highlighting how per-capita federal spending shifted across political contexts.';
+    'This chart compares federal obligations per capita by state in FY2024 versus the pre-Biden baseline average from FY2017–FY2020. States are ordered by maximum per-capita spending, with each state showing two bars: the lighter bar represents the historical average per person, and the darker bars show FY2024 levels. Colors represent the 2020 presidential election winner in each state, highlighting how per-capita federal spending shifted across political contexts. IIJA alone does not cover all federal spending, so USAspending totals are included for a complete view.';
   const keyObservations =
     'Key observations: Per-capita framing reveals states that rise or fall after adjusting for population size. It surfaces smaller states with outsized per-person changes, but the measure can exaggerate swings where population is very low.';
   const textToShow = viewMode === 'desc' ? chartDescription : keyObservations;
@@ -420,41 +420,44 @@ export default function PerCapitaPage() {
             </div>
           )}
           <Link
-            href="/"
+            href="/totals"
             className="fixed left-4 md:left-8 top-1/2 -translate-y-1/2 z-20 text-gray-400 text-base transition duration-150 ease-out hover:text-gray-900 hover:scale-125"
             aria-label="Go to total obligations chart"
           >
             <span className="inline-block">‹</span>
           </Link>
-          <Link
-            href="/scatter-pres"
-            className="fixed right-4 md:right-8 top-1/2 -translate-y-1/2 z-20 text-gray-400 text-base transition duration-150 ease-out hover:text-gray-900 hover:scale-125"
-            aria-label="Go to presidential margin scatter"
-          >
-            <span className="inline-block">›</span>
-          </Link>
-          <div className="fixed bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 rounded-full border border-gray-200 bg-white/65 px-4 py-1 text-xs text-gray-600 shadow-md backdrop-blur scale-75 origin-bottom">
-            <span className="font-semibold text-gray-900">3 / 7</span>
+        <Link
+          href="/scatter-pres"
+          className="fixed right-4 md:right-8 top-1/2 -translate-y-1/2 z-20 text-gray-400 text-base transition duration-150 ease-out hover:text-gray-900 hover:scale-125"
+          aria-label="Go to presidential margin scatter"
+        >
+          <span className="inline-block">›</span>
+        </Link>
+        <div className="fixed bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 rounded-full border border-gray-200 bg-white/65 px-4 py-1 text-xs text-gray-600 shadow-md backdrop-blur scale-75 origin-bottom">
+            <span className="font-semibold text-gray-900">4 / 8</span>
             <div className="flex items-center gap-2">
               <Link href="/intro" aria-label="Go to page 1">
                 <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
               </Link>
-              <Link href="/" aria-label="Go to page 2">
+              <Link href="/iija" aria-label="Go to page 2">
                 <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
               </Link>
-              <Link href="/per-capita" aria-label="Go to page 3">
+              <Link href="/totals" aria-label="Go to page 3">
+                <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
+              </Link>
+              <Link href="/per-capita" aria-label="Go to page 4">
                 <span className="block h-2 w-2 rounded-full bg-gray-900"></span>
               </Link>
-              <Link href="/scatter-pres" aria-label="Go to page 4">
+              <Link href="/scatter-pres" aria-label="Go to page 5">
                 <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
               </Link>
-              <Link href="/scatter-house" aria-label="Go to page 5">
+              <Link href="/scatter-house" aria-label="Go to page 6">
                 <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
               </Link>
-              <Link href="/delta-biden" aria-label="Go to page 6">
+              <Link href="/delta-biden" aria-label="Go to page 7">
                 <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
               </Link>
-              <Link href="/sources" aria-label="Go to page 7">
+              <Link href="/sources" aria-label="Go to page 8">
                 <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
               </Link>
             </div>

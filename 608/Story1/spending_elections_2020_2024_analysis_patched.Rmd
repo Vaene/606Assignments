@@ -3,10 +3,37 @@ title: "Federal Spending, Political Alignment, and Elections (2020–2024)"
 author: "Randy Howk"
 date: "`r Sys.Date()`"
 output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    number_sections: true
+    keep_tex: true
+    fig_caption: true
   html_document:
     toc: true
     toc_depth: 2
     number_sections: true
+geometry: "margin=0.5in"
+fontsize: 11pt
+mainfont: "Helvetica"
+monofont: "Menlo"
+linkcolor: blue
+urlcolor: blue
+header-includes:
+  - \usepackage{fvextra}
+  - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,breakanywhere,commandchars=\\\{\}}
+  - \usepackage{graphicx}
+  - \usepackage{float}
+  - \usepackage{microtype}
+  - \usepackage{setspace}
+  - \setstretch{1.05}
+  - \setlength{\emergencystretch}{1em}
+  - \makeatletter
+  - \def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+  - \def\maxheight{\ifdim\Gin@nat@height>0.85\textheight0.85\textheight\else\Gin@nat@height\fi}
+  - \makeatother
+  - \setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+  - \floatplacement{figure}{H}
 ---
 
 ```{r setup, include=FALSE}
@@ -32,7 +59,7 @@ The analysis is **observational** and evaluates correlation, not causation.
 
 # Intro Question
 
-**Did Spending Under Biden reflect voting patterns either in Presidential or House Races, and is there a correlation between that spending and the results in 2024?**
+**Did Spending Under Biden Reflect Voting Patterns Either In Presidential Or House Races, And Is There A Correlation Between That Spending And The Results In 2024?**
 
 We compare federal obligations per capita across states using a Biden-era average (FY2021–FY2024) versus a pre-Biden baseline (FY2017–FY2020), then test how those changes align with 2024 presidential and House margins.
 
@@ -101,6 +128,37 @@ scale_party_fill <- function(...) {
 label_billions <- label_dollar(scale = 1e-9, suffix = "B", accuracy = 0.1)
 label_dollars1 <- label_dollar(accuracy = 1)
 label_pct1 <- label_percent(accuracy = 1)
+```
+
+# IIJA Funding Snapshot (as of March 2023)
+
+```{r iija-load, message=FALSE}
+IIJA_XLSX_PATH <- "IIJA FUNDING AS OF MARCH 2023.xlsx"
+
+iija <- NULL
+if (file.exists(IIJA_XLSX_PATH)) {
+  iija <- readxl::read_excel(IIJA_XLSX_PATH) |>
+    janitor::clean_names() |>
+    transmute(
+      state_name = str_squish(str_to_upper(state_teritory_or_tribal_nation)),
+      iija_total_bil = as.numeric(total_billions)
+    )
+}
+
+# State/territory name -> abbreviation lookup
+state_lu <- tibble(state_name = str_to_upper(state.name), state = state.abb) |>
+  add_row(state_name = "DISTRICT OF COLUMBIA", state = "DC") |>
+  add_row(state_name = "PUERTO RICO", state = "PR") |>
+  add_row(state_name = "GUAM", state = "GU") |>
+  add_row(state_name = "U.S. VIRGIN ISLANDS", state = "VI") |>
+  add_row(state_name = "VIRGIN ISLANDS", state = "VI") |>
+  add_row(state_name = "AMERICAN SAMOA", state = "AS") |>
+  add_row(state_name = "NORTHERN MARIANA ISLANDS", state = "MP")
+
+if (!is.null(iija)) {
+  iija <- iija |>
+    left_join(state_lu, by = "state_name")
+}
 ```
 
 
@@ -486,9 +544,59 @@ pres2020 <- pres_long |>
   )
 ```
 
+# IIJA Funding Snapshot (March 2023)
+
+This chart uses the **IIJA funding snapshot (as of March 2023)** to provide a program-specific view alongside the all-program USAspending totals. The snapshot is not a substitute for total obligations, but it offers a focused look at infrastructure-specific allocations, which is why other datasets are used for the broader spending and election comparisons.
+
+```{r iija-snapshot, fig.height=10}
+if (!is.null(iija) && nrow(iija) > 0 && exists("pop")) {
+
+  iija_plot <- iija |>
+    filter(state %in% c(state.abb, "DC")) |>
+    left_join(pop |>
+                filter(fiscal_year == 2023) |>
+                select(state, pop_2023 = pop),
+              by = "state") |>
+    mutate(
+      iija_total = iija_total_bil * 1e9,
+      iija_pc = iija_total / pop_2023
+    ) |>
+    left_join(pres2020 |> select(state, winner_2020), by = "state") |>
+    arrange(desc(iija_pc)) |>
+    mutate(state = factor(state, levels = state))
+
+  ggplot(iija_plot, aes(x = iija_pc, y = state, fill = winner_2020)) +
+    geom_col(width = 0.75) +
+    scale_party_fill(guide = "none") +
+    scale_x_continuous(labels = label_dollars1) +
+    labs(
+      title = "IIJA funding per capita by state (March 2023 snapshot)",
+      subtitle = "Program-specific snapshot; per-capita uses 2023 population",
+      x = "IIJA funding per capita ($)",
+      y = NULL
+    ) +
+    theme_low_ink() +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.line = element_blank(),
+      axis.ticks = element_blank(),
+      axis.text.y = element_text(size = 7)
+    )
+} else {
+  message("IIJA snapshot not available. Ensure the Excel file is present.")
+}
+```
+
+### Key Observations
+
+1. **Program-specific contrast:** This IIJA snapshot shows infrastructure allocations only, which can diverge from overall federal obligations shown in the later charts.
+
+2. **Per-capita framing:** Using 2023 population normalizes for state size, highlighting smaller states with higher infrastructure dollars per resident.
+
 # Bar Charts (FY2024): Spending and Spending Per Capita
 
-These charts use a **horizontal bar** layout for readable state labels, and follow the low-ink theme set above.
+These charts use a **horizontal bar** layout for readable state labels, and follow the low-ink theme set above. The IIJA file is a program-specific snapshot, so USAspending totals are included to capture the full federal spending picture needed for the broader analysis.
 
 ## FY2024 Obligations by State (Total)
 
@@ -529,7 +637,7 @@ ggplot(bars_total_plot, aes(x = value, y = state_series, fill = winner_2020, alp
   scale_x_continuous(labels = label_billions) +
   labs(
     title = "Federal obligations by state: FY2024 vs pre-Biden baseline",
-    subtitle = "Top bar per state = mean(FY2017–FY2020); bottom bar = FY2024",
+    subtitle = "Top bar per state = mean(FY2017-FY2020); bottom bar = FY2024",
     x = "Obligations (billions of $)",
     y = NULL
   ) +
@@ -545,7 +653,7 @@ ggplot(bars_total_plot, aes(x = value, y = state_series, fill = winner_2020, alp
 
 ### Key Observations
 
-1. **Why data beyond the IIJA snapshot:** The IIJA spreadsheet is a program‑specific funding snapshot, but the research question requires **total federal obligations** across all programs. The USAspending API provides full‑scope spending needed to compare eras and align with election outcomes.
+1. **IIJA as the trigger:** The IIJA snapshot motivated the broader inquiry, but it only covers one program. We pull **total federal obligations** from USAspending to see whether the IIJA pattern holds in overall spending.
 
 2. **Comparable time windows:** Using FY2017–FY2020 vs FY2024 creates a stable baseline instead of a single year or a single program, making changes more interpretable.
 
@@ -588,7 +696,7 @@ ggplot(bars_pc_plot, aes(x = value, y = state_series, fill = winner_2020, alpha 
   scale_x_continuous(labels = label_dollars1) +
   labs(
     title = "Federal obligations per capita by state: FY2024 vs pre-Biden baseline",
-    subtitle = "Top bar per state = mean(FY2017–FY2020); bottom bar = FY2024",
+    subtitle = "Top bar per state = mean(FY2017-FY2020); bottom bar = FY2024",
     x = "Obligations per capita ($)",
     y = NULL
   ) +
@@ -604,9 +712,9 @@ ggplot(bars_pc_plot, aes(x = value, y = state_series, fill = winner_2020, alpha 
 
 ### Key Observations
 
-1. **Why per‑capita is clearer:** Per‑capita spending controls for population size, revealing states that look small in total dollars but large **per resident**.
+1. **Why per‑capita is clearer:** Per‑capita spending controls for population size, revealing states that look small in total dollars but large **per resident**—useful when comparing to a per‑capita IIJA snapshot.
 
-2. **Per‑capita pitfalls:** Very small population states and DC can show extreme values because the denominator is small. These outliers are real but can **exaggerate swings**, so they should be read alongside totals.
+2. **Per‑capita pitfalls:** Very small population states and DC can show extreme values because the denominator is small. These outliers are real but can **exaggerate swings**, so they should be read alongside totals and the IIJA snapshot.
 
 # 2024 Election Results
 
@@ -819,36 +927,6 @@ This bar chart compares average federal obligations per capita during the Biden 
 
 3. **Observational Analysis:** These findings represent observed correlations between spending changes and political characteristics. Causation cannot be inferred: we cannot determine whether political factors influenced spending, whether spending influenced politics, or whether both were driven by other factors.
 
-# Exporting Charts to PowerPoint
-
-You have two recommended options:
-
-## Option A :  PNG workflow (simple)
-
-1. Knit this document.
-2. Right-click figures in the HTML output and save as images.
-3. Insert images into PowerPoint using **Insert → Pictures**.
-
-## Option B :  Vector PowerPoint workflow (recommended)
-
-Use `officer` + `rvg` to insert charts as editable vectors:
-
-```r
-library(officer)
-library(rvg)
-
-ppt <- read_pptx()
-ppt <- add_slide(ppt, layout = "Title and Content", master = "Office Theme")
-ppt <- ph_with(
-  ppt,
-  dml(ggobj = last_plot()),
-  location = ph_location_type(type = "body")
-)
-print(ppt, target = "spending_elections_2020_2024.pptx")
-```
-
-This preserves full resolution and allows text editing directly in PowerPoint.
-
 # Notes
 
 - Results should be interpreted as correlational.
@@ -861,7 +939,7 @@ This page lists local data files used in the analysis, their original sources, a
 
 **Summary Answer**
 
-Spending increases in the Biden era are broad-based across states, but the scatter plots show only moderate positive associations with 2024 presidential and House margins. The relationship is real but not deterministic: states with similar spending changes often voted differently, and outliers remain. In short, spending shifts alone do not explain 2024 election outcomes, though they move in the same direction on average.
+The IIJA snapshot inspired a broader check of total federal obligations. Across the full dataset, spending increases in the Biden era are broad-based across states, but the scatter plots show only moderate positive associations with 2024 presidential and House margins. The relationship is real but not deterministic: states with similar spending changes often voted differently, and outliers remain. In short, spending shifts alone do not explain 2024 election outcomes, though they move in the same direction on average.
 
 **USAspending (federal obligations by state, FY2017–FY2024)**  
 Local file: Not stored locally (pulled live via API during analysis)  
@@ -897,3 +975,8 @@ Processing: Aggregated by state to compute a statewide House margin using total 
 Local file: [president_2020.csv](president_2020.csv)  
 Source: User-provided (original source not embedded in the file)  
 Processing: Filtered to 2020 and the two major candidates, then assigned a state winner based on total votes per candidate.
+
+**IIJA funding snapshot (March 2023)**  
+Local file: [IIJA FUNDING AS OF MARCH 2023.xlsx](IIJA FUNDING AS OF MARCH 2023.xlsx)  
+Source: User-provided (snapshot file)  
+Processing: Loaded from Excel, mapped to state abbreviations, and converted to per-capita values using 2023 population.

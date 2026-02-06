@@ -567,16 +567,7 @@ export default function ScatterPresPage() {
               </button>
             )}
           </div>
-          {stats && (
-            <div className="mt-2 text-xs text-gray-600">
-              Scatter plot — does it visually look linear? R² — does the line explain a meaningful amount of
-              variance? p-value — is the slope distinguishable from noise?{' '}
-              <span className="text-gray-800">
-                R² {stats.r2.toFixed(2)}, p {stats.p.toFixed(3)} —{' '}
-                {stats.relevant ? 'line shown as solid' : 'line shown as dashed, 50% opacity'}.
-              </span>
-            </div>
-          )}
+          {stats && null}
         </div>
 
         <Link
@@ -594,27 +585,30 @@ export default function ScatterPresPage() {
           <span className="inline-block">›</span>
         </Link>
         <div className="fixed bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 rounded-full border border-gray-200 bg-white/65 px-4 py-1 text-xs text-gray-600 shadow-md backdrop-blur scale-75 origin-bottom">
-          <span className="font-semibold text-gray-900">4 / 7</span>
+          <span className="font-semibold text-gray-900">5 / 8</span>
           <div className="flex items-center gap-2">
             <Link href="/intro" aria-label="Go to page 1">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/" aria-label="Go to page 2">
+            <Link href="/iija" aria-label="Go to page 2">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/per-capita" aria-label="Go to page 3">
+            <Link href="/totals" aria-label="Go to page 3">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/scatter-pres" aria-label="Go to page 4">
+            <Link href="/per-capita" aria-label="Go to page 4">
+              <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
+            </Link>
+            <Link href="/scatter-pres" aria-label="Go to page 5">
               <span className="block h-2 w-2 rounded-full bg-gray-900"></span>
             </Link>
-            <Link href="/scatter-house" aria-label="Go to page 5">
+            <Link href="/scatter-house" aria-label="Go to page 6">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/delta-biden" aria-label="Go to page 6">
+            <Link href="/delta-biden" aria-label="Go to page 7">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
-            <Link href="/sources" aria-label="Go to page 7">
+            <Link href="/sources" aria-label="Go to page 8">
               <span className="block h-2 w-2 rounded-full bg-gray-300 hover:bg-gray-400"></span>
             </Link>
           </div>
